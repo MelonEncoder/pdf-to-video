@@ -1,4 +1,3 @@
-
 #include <poppler/cpp/poppler-global.h>
 #include <poppler/cpp/poppler-document.h>
 #include <poppler/cpp/poppler-image.h>

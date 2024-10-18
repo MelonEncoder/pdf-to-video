@@ -1,8 +1,18 @@
 project('pti_v2', 'cpp')
 
-include_dirs = ['/usr/include/poppler', '/usr/include/opencv4/opencv2']
+include_dirs = [
+    '/usr/include/poppler',
+    '/usr/include/opencv4/opencv2',
+]
 
-linked_libs = ['-lpoppler-cpp']
+## found in the /usr/lib/ dir
+linked_libs = [
+    '-lpoppler-cpp',
+    '-lopencv_core',
+    '-lopencv_imgproc',
+    '-lopencv_highgui',
+    '-lopencv_imgcodecs',
+]
 
 executable(
     'test.out',

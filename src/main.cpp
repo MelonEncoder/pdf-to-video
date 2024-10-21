@@ -26,7 +26,9 @@ namespace fs = std::filesystem;
 // pdf_to_images(scaled)
 // pdf_to_images(full_res)
 //
-// pad_image_names() : [ 1, 10, 100 ] -> [ 001, 010, 100 ]
+// pad_image_names(dir) : [ 1, 10, 100 ] -> [ 001, 010, 100 ]
+// scale_images_to_width(dir, dst_width) keeps og aspect ratio
+// scale_images_to_height(dir, dst_height) keeps og aspect ratio
 
 int main(int argc, char **argv) {
     string pdf_path = "";
@@ -50,6 +52,8 @@ int main(int argc, char **argv) {
         std::cerr << "path is not a PDF file" << std::endl;
         return 1;
     }
+
+    pad_image_names("../test_seq_copy/");
 
     return 0;
 }

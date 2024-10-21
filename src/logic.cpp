@@ -1,6 +1,7 @@
 #include "poppler.hpp"
 #include "opencv.hpp"
 #include "logic.hpp"
+#include <cstdio>
 #include <iostream>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
@@ -56,8 +57,28 @@ class Viewport {
         }
 };
 
+// dir contains numbered images
 void pad_image_names(string dir) {
+    vector<string> old_paths;
+    vector<string> img_names;
+    vector<string> file_extensions;
 
+    for (const auto &entry : fs::directory_iterator(dir)) {
+        if (!fs::is_directory(entry)) {
+            string file_name = entry.path().filename().string();
+
+            img_names.push_back(file_name.substr(0, file_name.find('.')));
+            file_extensions.push_back(file_name.substr(file_name.find('.')));
+            old_paths.push_back(entry.path().string());
+        }
+    }
+
+    for (int i = 0; i < (int)old_paths.size(); i++) {
+        string new_path = dir + get_page_name(std::stoi(img_names[i]), old_paths.size()) + file_extensions[i];
+        if (std::rename(old_paths[i].c_str(), new_path.c_str())) {
+            std::cerr << "Error renaming " + old_paths[i] << std::endl;
+        }
+    }
 }
 
 void save_pages(string pdf_path, double scaled_dpi, bool keep_resolution, poppler::document *pdf) {

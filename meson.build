@@ -1,5 +1,9 @@
 project('pti_v2', 'cpp')
 
+output = 'test.out'
+
+srcs = ['src/main.cpp', 'src/logic.cpp']
+
 include_dirs = [
     '/usr/include/poppler',
     '/usr/include/opencv4/opencv2',
@@ -15,8 +19,8 @@ linked_libs = [
 ]
 
 executable(
-    'test.out',
-    'src/main.cpp',
+    output,
+    sources: srcs,
     include_directories: include_dirs,
     link_args: linked_libs,
 )

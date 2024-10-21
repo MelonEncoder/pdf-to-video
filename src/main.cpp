@@ -1,4 +1,5 @@
 #include "logic.hpp"
+#include <opencv2/core/hal/interface.h>
 
 using std::string;
 // using std::vector;
@@ -8,27 +9,27 @@ namespace fs = std::filesystem;
 // pdf || dir of numbered images
 //
 // Default:
-// output pdf_to_video(sequence, full_res) 1sec, 1fps,
+// pdf_to_video(sequence, full_res) 1sec, 1fps,
 //
 // Functions:
-// create_viewport(keep_aspect_ratio)
+// Viewport create_viewport(keep_aspect_ratio)
 //
-// pdf_to_video(scroll, scaled)
-// pdf_to_video(scroll, full_res)
-// pdf_to_video(sequence, scaled)
-// pdf_to_video(sequence, full_res)
+// void pdf_to_video(scroll, scaled)
+// void pdf_to_video(scroll, full_res)
+// void pdf_to_video(sequence, scaled)
+// void pdf_to_video(sequence, full_res)
 //
-// images_to_video(scroll, scaled)
-// images_to_video(scroll, full_res)
-// images_to_video(sequence, scaled)
-// images_to_video(sequence, full_res)
+// void images_to_video(scroll, scaled)
+// void images_to_video(scroll, full_res)
+// void images_to_video(sequence, scaled)
+// void images_to_video(sequence, full_res)
 //
-// pdf_to_images(scaled)
-// pdf_to_images(full_res)
+// void pdf_to_images(scaled)
+// void pdf_to_images(full_res)
 //
-// pad_image_names(dir) : [ 1, 10, 100 ] -> [ 001, 010, 100 ]
-// scale_images_to_width(dir, dst_width) keeps og aspect ratio
-// scale_images_to_height(dir, dst_height) keeps og aspect ratio
+// void pad_image_names(dir) : [ 1, 10, 100 ] -> [ 001, 010, 100 ]
+// void scale_images_to_width(&vector<cv::Mat>, dst_width) keeps og aspect ratio
+// void scale_images_to_height(&vector<cv::Mat>, dst_height) keeps og aspect ratio
 
 int main(int argc, char **argv) {
     string pdf_path = "";
@@ -53,17 +54,5 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    pad_image_names("../test_seq_copy/");
-
     return 0;
 }
-
-// void to_video() {
-//     save_pages(false);
-//     generate_frames();
-//     generate_video();
-// }
-
-// void to_images() {
-//     save_pages(true);
-// }

@@ -57,6 +57,35 @@ class Viewport {
         }
 };
 
+void scale_img_to_width(cv::Mat &image, int new_width) {
+    cv::Mat new_img;
+    double scale = (double)new_width / (double)image.cols;
+    cv::resize(image, new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
+    image = new_img;
+}
+void scale_img_to_height(cv::Mat &image, int new_height) {
+    cv::Mat new_img;
+    double scale = (double)new_height / (double)image.rows;
+    cv::resize(image, new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
+    image = new_img;
+}
+void scale_img_to_width(vector<cv::Mat> &images, int new_width) {
+    for (int i = 0; i < (int)images.size(); i++) {
+        cv::Mat new_img;
+        double scale = (double)new_width / (double)images[i].cols;
+        cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
+        images[i] = new_img;
+    }
+}
+void scale_img_to_height(vector<cv::Mat> &images, int new_height) {
+    for (int i = 0; i < (int)images.size(); i++) {
+        cv::Mat new_img;
+        double scale = (double)new_height / (double)images[i].rows;
+        cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
+        images[i] = new_img;
+    }
+}
+
 // dir contains numbered images
 void pad_image_names(string dir) {
     vector<string> old_paths;

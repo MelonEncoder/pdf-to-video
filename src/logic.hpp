@@ -16,6 +16,10 @@ using std::vector;
 namespace fs = std::filesystem;
 
 class Viewport;
+void scale_img_to_width(cv::Mat &image, int new_width);
+void scale_img_to_height(cv::Mat &image, int new_height);
+void scale_img_to_width(vector<cv::Mat> &images, int new_width);
+void scale_img_to_height(vector<cv::Mat> &images, int new_height);
 void pad_image_names(string dir);
 void save_pages(string pdf_path, double scaled_dpi, bool keep_resolution, poppler::document *pdf);
 double get_scaled_dpi(poppler::page *page, Viewport &vp); // returns dpi that will scale the pdf page to fit viewport width

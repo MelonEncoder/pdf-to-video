@@ -1,61 +1,24 @@
 #include "poppler.hpp"
 #include "opencv.hpp"
+#include "ptv.hpp"
 #include "logic.hpp"
-#include <cstdio>
-#include <iostream>
+#include <algorithm>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
+#include <iostream>
 #include <string>
 #include <filesystem>
+#include <utility>
 #include <vector>
 #include <cstdlib>
+#include <cstdio>
 
 using std::string;
 using std::vector;
 namespace fs = std::filesystem;
-
-////////
-class Viewport {
-    int width;
-    int height;
-    int fps;
-    int spp;
-    string video_fmt;
-
-    public:
-        // Vairables
-        cv::Mat img;
-
-        // Constructors
-        Viewport(int width, int height, int fps, int seconds_per_page, string video_fmt) {
-            this->width = width;
-            this->height = height;
-            this->fps = fps;
-            this->spp = seconds_per_page;
-            this->video_fmt = video_fmt;
-            this->img = cv::Mat(height, width, CV_8UC3);
-        }
-
-        // Getters
-        int get_width() {
-            return this->width;
-        }
-        int get_height() {
-            return this->height;
-        }
-        int get_fps() {
-            return this->fps;
-        }
-        int get_spp() {
-            return this->spp;
-        }
-        string get_fmt() {
-            return this->video_fmt;
-        }
-};
 
 void scale_img_to_width(cv::Mat &image, int new_width) {
     cv::Mat new_img;
@@ -110,20 +73,23 @@ void pad_image_names(string dir) {
     }
 }
 
-void save_pages(string pdf_path, double scaled_dpi, bool keep_resolution, poppler::document *pdf) {
+void pdf_to_images(string pdf_dir, poppler::document *pdf, struct VP &vp, Style style) {
     int page_count = pdf->pages();
     auto renderer = poppler::page_renderer();
     string image_type = "jpg";
-    string pdf_dir = get_pdf_dir(pdf_path);
-    double dpi = 72.0;
 
+    std::cout << "Generating PDF Pages..." << std::endl;
     for (int i = 0; i < page_count; i++) {
+        double dpi = DEFAULT_DPI;
         string pg_name = get_page_name(i, page_count);
         string path = pdf_dir + pg_name + "." + image_type;
 
         poppler::page *page = pdf->create_page(i);
-        if (!keep_resolution) {
-            dpi = scaled_dpi;
+        // just in case pages are different sizes.
+        if (style == Style::SCROLL) {
+            dpi = get_scaled_dpi_from_width(page, vp.width);
+        } else if (style == Style::SEQUENCE) {
+            dpi = get_scaled_dpi(page, vp);
         }
 
         poppler::image tmp_img = renderer.render_page(page, dpi, dpi);
@@ -133,22 +99,20 @@ void save_pages(string pdf_path, double scaled_dpi, bool keep_resolution, popple
     }
 }
 
-void generate_video(string pdf_path, string pdf_dir, Viewport &vp) {
+void generate_video(string pdf_dir, string frames_dir, string output, struct VP &vp) {
     // ffmpeg -f image2 -framerate 12 -i ./%04d.jpg -s 1920x1080 e.mp4
     // ffmpeg -framerate 1/2 -i "%04d.jpg" -c:v libx264 -crf 23 -preset medium -vf scale=1280:-1 output.mp4
-    string output = pdf_dir + get_pdf_name(pdf_path) + "." + vp.get_fmt();
-
     while (fs::exists(output)) {
         output.insert(output.length() - 4, "+");
     }
 
     vector<string> cmd_args = {
         "-framerate",
-        std::to_string(vp.get_fps()),
+        std::to_string(vp.fps),
         "-i",
-        get_frames_dir(pdf_dir) + "%05d.jpg",
+        frames_dir + "%06d.jpg",
         "-s",
-        std::to_string(vp.get_width()) + "x" + std::to_string(vp.get_height()),
+        std::to_string(vp.width) + "x" + std::to_string(vp.height),
         output
     };
 
@@ -159,31 +123,67 @@ void generate_video(string pdf_path, string pdf_dir, Viewport &vp) {
 
     std::cout << "CMD: " << cmd << std::endl;
 
-    std::cout << "Generating video." << std::endl;
+    std::cout << "Generating video..." << std::endl;
     std::system(cmd.c_str());
-    std::cout << "Finished." << std::endl;
+
+    std::cout << "Output path: " << output << std::endl;
 }
 
-void generate_frames(string frames_dir, cv::Mat long_image, poppler::document *pdf, Viewport &vp) {
-    std::cout << "Generating video frames." << std::endl;
-    int pixels_translated = (double)long_image.rows / (vp.get_fps() * vp.get_spp() * pdf->pages());
-    int height = long_image.rows - vp.img.rows; // - vp.rows prevents out of bounds error with cv::Rect roi
+void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, struct VP &vp) {
+    int pixels_translated = (double)long_image.rows / (vp.fps * vp.spp * pages);
+    int height = long_image.rows - vp.height; // - vp.rows prevents out of bounds error with cv::Rect roi
+    cv::Mat tmp_img(vp.height, vp.width, CV_8UC3);
 
     // std::cout << "height: " << long_image.rows << " width: " << long_image.cols << std::endl;
     std::cout << "pixels per frame: " << pixels_translated << std::endl;
     // std::cout << "total_height: " << height << std::endl;
 
+    std::cout << "Generating video frames..." << std::endl;
     for (int h = 0, i = 0; h < height; h += pixels_translated, i++) {
-        cv::Rect roi = cv::Rect(0, h, vp.img.cols, vp.img.rows);
-        long_image(roi).copyTo(vp.img);
+        cv::Rect roi = cv::Rect(0, h, vp.width, vp.height);
+        long_image(roi).copyTo(tmp_img);
         string file = frames_dir + get_frame_name(i) + ".jpg";
-        cv::imwrite(file, vp.img);
+        cv::imwrite(file, tmp_img, {cv::IMWRITE_JPEG_QUALITY, 90});
     }
-    std::cout << "Finished generating video frames." << std::endl;
+}
+
+void generate_sequence_frames(string frames_dir, int pages, vector<cv::Mat> images, struct VP &vp) {
+    int count = 0;
+    std::cout << "Generating video frames..." << std::endl;
+    for (int i = 0; i < (int)images.size(); i ++) {
+        for (int j = 0; j < (int)(vp.fps * vp.spp); j++) {
+            string path = frames_dir + get_frame_name(count) + ".jpg";
+            // std::cout << path << std::endl;
+            cv::imwrite(path, images[i], {cv::IMWRITE_JPEG_QUALITY, 90});
+            count++;
+        }
+    }
 }
 
 string get_frames_dir(string pdf_dir) {
     return pdf_dir + "frames/";
+}
+
+vector<cv::Mat> get_images(string dir) {
+    vector<cv::Mat> images;
+    std::map<int, string> image_map;
+    for (const auto &entry : fs::directory_iterator(dir)) {
+        string path;
+        int index;
+        if (!fs::is_directory(entry)) {
+            path = entry.path().string();
+            string name = entry.path().filename().string();
+            index = std::stoi(name.substr(0, name.length() - name.find_last_of('.')));
+            image_map.insert(std::make_pair(index, path));
+            // std::cout << "index: " << index << "  path: " << path << std::endl;
+        }
+    }
+    // reads images in numerical order
+    for (int i = 0; i < (int)image_map.size(); i++) {
+        cv::Mat tmp = cv::imread(image_map[i]);
+        images.push_back(tmp);
+    }
+    return images;
 }
 
 void make_frames_dir(string frames_dir) {
@@ -196,7 +196,7 @@ void make_frames_dir(string frames_dir) {
     }
 }
 
-cv::Mat get_long_image(int pages, string pdf_dir, Viewport &vp) {
+cv::Mat get_long_image(int pages, string pdf_dir, struct VP &vp) {
     int height = 0;
     vector<cv::Mat> images;
     cv::Mat long_image;
@@ -208,15 +208,16 @@ cv::Mat get_long_image(int pages, string pdf_dir, Viewport &vp) {
         images.push_back(tmp_img);
     }
     // adds white space before and after content.
-    height += vp.img.rows * 2;
+    height += vp.height * 2;
 
-    // images that will contain all pages of pdf
-    long_image = cv::Mat(height, vp.img.cols, CV_8UC3);
+    // images that will contain all contents of pdf
+    long_image = cv::Mat(height, vp.width, CV_8UC3);
 
     // sequentually adds all pages of pdf in order to long_image.
-    for (int i = 0, h = vp.img.rows; i < pages; i++) {
+    for (int i = 0, h = vp.height; i < pages; i++) {
         cv::Mat tmp_img = images[i];
-        std::cout << tmp_img.rows << std::endl;
+        // std::cout << tmp_img.rows << std::endl;
+        // ROI -> Region of Interest
         cv::Rect roi = cv::Rect(0, h, long_image.cols, tmp_img.rows);
         tmp_img.copyTo(long_image(roi));
         h += tmp_img.rows;
@@ -226,14 +227,44 @@ cv::Mat get_long_image(int pages, string pdf_dir, Viewport &vp) {
     return long_image;
 }
 
-// returns dpi that will scale the pdf page to fit viewport width
-double get_scaled_dpi(poppler::page *page, Viewport &vp) {
-    double dpi = 0.0;
+// returns dpi to scale page to viewport width
+double get_scaled_dpi_from_width(poppler::page *page, int width) {
+    auto rect = page->page_rect(poppler::media_box);
+    // std::cout << "Rect_w: " << rect.width() << "  width: " << width << std::endl;
+
+    if (rect.width() == width) {
+        return DEFAULT_DPI;
+    }
+
+    return ((double)width * DEFAULT_DPI) / (double)rect.width();
+}
+
+// returns dpi to scale page to viewport height
+double get_scaled_dpi_from_height(poppler::page *page, int height) {
     auto rect = page->page_rect(poppler::media_box);
 
-    dpi = ((double)vp.get_width() * 72.0) / rect.width();
+    if (rect.height() == height) {
+        return DEFAULT_DPI;
+    }
 
-    return dpi;
+    return ((double)height * DEFAULT_DPI) / (double)rect.height();
+}
+
+// returns dpi that will scale the pdf page to fit the viewport dimentions
+double get_scaled_dpi(poppler::page *page, struct VP &vp) {
+    double dpi_w = DEFAULT_DPI;
+    double dpi_h = DEFAULT_DPI;
+    poppler::rectf rect = page->page_rect(poppler::media_box);
+
+    if (rect.width() > vp.width) {
+        dpi_w = ((double)vp.width * DEFAULT_DPI) / rect.width();
+    }
+    if (rect.height() > vp.height) {
+        dpi_h = ((double)vp.height * DEFAULT_DPI) / rect.height();
+    }
+
+    // ensures that the entire page fits inside of the viewport;
+    return std::min(dpi_w, dpi_h);
 }
 
 string get_pdf_dir(string pdf_path) {
@@ -250,11 +281,19 @@ void make_pdf_dir(string pdf_dir) {
     }
 }
 
+bool delete_dir(string dir) {
+    if (fs::is_directory(dir)) {
+        return fs::remove_all(fs::path(dir));
+    }
+    std::cout << "Error: cannot delete " << dir << "" << std::endl;
+    return false;
+}
+
 string get_pdf_name(string pdf_path) {
     return pdf_path.substr(pdf_path.find_last_of("/") + 1, pdf_path.length() - 7);
 }
 
-// returns number string with 6 padding.
+// returns numerical name as string no file extension
 string get_frame_name(int index) {
     if (index < 10) {
         return "00000" + std::to_string(index);
@@ -272,6 +311,7 @@ string get_frame_name(int index) {
     return "z";
 }
 
+// returns numerical name as string no file extension
 string get_page_name(int index, int pages) {
     if (pages < 10) {
         return std::to_string(index);

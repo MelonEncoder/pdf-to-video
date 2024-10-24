@@ -178,15 +178,12 @@ int main(int argc, char **argv) {
         int pages = pdf->pages();
         poppler::rectf rect = pdf->create_page(0)->page_rect(poppler::media_box);
 
-        // std::cout << "RECT_W: " << rect.width() << std::endl;
-        // std::cout << "RECT_H: " << rect.height() << std::endl;
+        // sets viewport's with/height to full res of first pdf page
         if (width == -1) {
             vp.width = rect.width();
-            // std::cout << "w: " << vp.width << std::endl;
         }
         if (height == -1) {
             vp.height = rect.height();
-            // std::cout << "h: " << vp.height << std::endl;
         }
 
         make_pdf_dir(pdf_dir);
@@ -198,12 +195,12 @@ int main(int argc, char **argv) {
             cv::Mat long_img = get_long_image(pages, pdf_dir, vp);
             generate_scroll_frames(frames_dir, pages, long_img, vp);
         } else if (style == Style::SEQUENCE) {
-            vector<cv::Mat> images = get_images(pdf_dir);
+            vector<cv::Mat> images = get_images(img_seq_dir);
             generate_sequence_frames(frames_dir, pages, images, vp);
         }
 
         string output = pdf_path.substr(0, pdf_path.length() - 4) + "." + vp.fmt;
-        generate_video(pdf_dir, frames_dir, output, vp);
+        generate_video(frames_dir, output, vp);
 
         if (!keep) {
             delete_dir(frames_dir);
@@ -215,9 +212,37 @@ int main(int argc, char **argv) {
 
     // converting image sequence to video
     if (img_seq_dir != "") {
+        string frames_dir = get_frames_dir(img_seq_dir);
+        make_frames_dir(frames_dir);
 
+        vector<cv::Mat> images = get_images(img_seq_dir);
+
+        if (width == -1) {
+            vp.width = images[0].cols;
+        }
+        if (height == -1) {
+            vp.height = images[0].rows;
+        }
+
+        int img_cnt = images.size();
+        if (style == Style::SCROLL) {
+            scale_images_to_width(images, vp.width);
+            cv::Mat long_img = get_long_image(img_cnt, images, vp);
+            generate_scroll_frames(frames_dir, img_cnt, long_img, vp);
+        } else if (style == Style::SEQUENCE) {
+            scale_images_to_fit(images, vp);
+            generate_sequence_frames(frames_dir, img_cnt, images, vp);
+        }
+
+        string output = img_seq_dir.substr(0, img_seq_dir.length() - 1) + "." + vp.fmt;
+        generate_video(frames_dir, output, vp);
+
+        if (!keep) {
+            delete_dir(frames_dir);
+        }
+
+        std::cout << "Finished!" << std::endl;
     }
-
 
     return 0;
 }

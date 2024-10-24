@@ -33,7 +33,8 @@ void scale_img_to_height(cv::Mat &image, int new_height) {
     cv::resize(image, new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
     image = new_img;
 }
-void scale_img_to_width(vector<cv::Mat> &images, int new_width) {
+
+void scale_images_to_width(vector<cv::Mat> &images, int new_width) {
     for (int i = 0; i < (int)images.size(); i++) {
         cv::Mat new_img;
         double scale = (double)new_width / (double)images[i].cols;
@@ -41,10 +42,40 @@ void scale_img_to_width(vector<cv::Mat> &images, int new_width) {
         images[i] = new_img;
     }
 }
-void scale_img_to_height(vector<cv::Mat> &images, int new_height) {
+
+void scale_images_to_fit(vector<cv::Mat> &images, struct VP &vp) {
     for (int i = 0; i < (int)images.size(); i++) {
+        cv::Mat img(images[i]);
+        double scale_w;
+        double scale_h;
+        double scale = 1.0;
+
+        if (img.cols > vp.width && img.cols > vp.height) {
+            scale_w = (double)vp.width / (double)images[i].cols;
+            scale_h = (double)vp.height / (double)images[i].rows;
+            scale = std::min(scale_w, scale_h);
+        }
+        if (img.cols < vp.width && img.rows < vp.height) {
+            scale_w = (double)vp.width / (double)images[i].cols;
+            scale_h = (double)vp.height / (double)images[i].rows;
+            scale = std::min(scale_w, scale_h);
+        }
+        if (img.cols > vp.width && img.rows <= vp.height) {
+            scale_w = (double)vp.width / (double)img.cols;
+            scale = scale_w;
+        }
+        if (img.cols <= vp.width && img.rows > vp.height) {
+            scale_h = (double)vp.height / (double)img.rows;
+            scale = scale_h;
+        }
+
+        std::cout << "Scale: " << scale << std::endl;
+        std::cout << "scale_h: " << scale_h << std::endl;
+        std::cout << "scale_w: " << scale_w << std::endl;
+        std::cout << "rows: " << img.rows << std::endl;
+        std::cout << "cols: " << img.cols << std::endl;
+
         cv::Mat new_img;
-        double scale = (double)new_height / (double)images[i].rows;
         cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
         images[i] = new_img;
     }
@@ -100,7 +131,7 @@ void pdf_to_images(string pdf_dir, poppler::document *pdf, struct VP &vp, Style 
     }
 }
 
-void generate_video(string pdf_dir, string frames_dir, string output, struct VP &vp) {
+void generate_video(string frames_dir, string output, struct VP &vp) {
     // ffmpeg -f image2 -framerate 12 -i ./%04d.jpg -s 1920x1080 e.mp4
     // ffmpeg -framerate 1/2 -i "%04d.jpg" -c:v libx264 -crf 23 -preset medium -vf scale=1280:-1 output.mp4
     while (fs::exists(output)) {
@@ -207,8 +238,20 @@ vector<cv::Mat> get_images(string dir) {
     }
     // reads images in numerical order
     for (int i = 0; i < (int)image_map.size(); i++) {
+        if (image_map[i] == "") {
+            continue;
+        }
         cv::Mat tmp = cv::imread(image_map[i]);
-        images.push_back(tmp);
+
+        // makes dimentions of the image divisible by 2.
+        // ffmpeg will get upset if otherwise
+        int rows = tmp.rows % 2 != 0 ? tmp.rows + 1 : tmp.rows;
+        int cols = tmp.cols % 2 != 0 ? tmp.cols + 1 : tmp.cols;
+        cv::Rect2i roi(0, 0, tmp.cols, tmp.rows);
+        cv::Mat tmp2(rows, cols, CV_8UC3);
+        tmp.copyTo(tmp2(roi));
+
+        images.push_back(cv::Mat(tmp2));
     }
     return images;
 }
@@ -223,14 +266,24 @@ void make_frames_dir(string frames_dir) {
     }
 }
 
-cv::Mat get_long_image(int pages, string pdf_dir, struct VP &vp) {
+void make_scaled_dir(string scaled_dir) {
+    if (fs::exists(scaled_dir)) {
+        std::cout << "Frames directory already exists." << std::endl;
+    }
+    else {
+        fs::create_directory(scaled_dir);
+        std::cout << "Created frames directory." << std::endl;
+    }
+}
+
+cv::Mat get_long_image(int total_images, string images_dir, struct VP &vp) {
     int height = 0;
     vector<cv::Mat> images;
     cv::Mat long_image;
 
     // stores exported pdf pages as images in vector.
-    for (int i = 0; i < pages; i++) {
-        cv::Mat tmp_img = cv::imread(pdf_dir + get_page_name(i, pages) + ".jpg", cv::IMREAD_COLOR);
+    for (int i = 0; i < total_images; i++) {
+        cv::Mat tmp_img = cv::imread(images_dir + get_page_name(i, total_images) + ".jpg", cv::IMREAD_COLOR);
         height += tmp_img.rows;
         images.push_back(tmp_img);
     }
@@ -241,7 +294,35 @@ cv::Mat get_long_image(int pages, string pdf_dir, struct VP &vp) {
     long_image = cv::Mat(height, vp.width, CV_8UC3);
 
     // sequentually adds all pages of pdf in order to long_image.
-    for (int i = 0, h = vp.height; i < pages; i++) {
+    for (int i = 0, h = vp.height; i < total_images; i++) {
+        cv::Mat tmp_img = images[i];
+        // std::cout << tmp_img.rows << std::endl;
+        // ROI -> Region of Interest
+        cv::Rect roi = cv::Rect(0, h, long_image.cols, tmp_img.rows);
+        tmp_img.copyTo(long_image(roi));
+        h += tmp_img.rows;
+    }
+    // cv::imwrite("../longboy.jpg", long_image);
+
+    return long_image;
+}
+
+cv::Mat get_long_image(int total_images, vector<cv::Mat> &images, struct VP &vp) {
+    int height = 0;
+    cv::Mat long_image;
+
+    // stores exported pdf pages as images in vector.
+    for (int i = 0; i < total_images; i++) {
+        height += images[i].rows;
+    }
+    // adds white space before and after content.
+    height += vp.height * 2;
+
+    // images that will contain all contents of pdf
+    long_image = cv::Mat(height, vp.width, CV_8UC3);
+
+    // sequentually adds all pages of pdf in order to long_image.
+    for (int i = 0, h = vp.height; i < total_images; i++) {
         cv::Mat tmp_img = images[i];
         // std::cout << tmp_img.rows << std::endl;
         // ROI -> Region of Interest
@@ -264,17 +345,6 @@ double get_scaled_dpi_from_width(poppler::page *page, int width) {
     }
 
     return ((double)width * DEFAULT_DPI) / (double)rect.width();
-}
-
-// returns dpi to scale page to viewport height
-double get_scaled_dpi_from_height(poppler::page *page, int height) {
-    auto rect = page->page_rect(poppler::media_box);
-
-    if (rect.height() == height) {
-        return DEFAULT_DPI;
-    }
-
-    return ((double)height * DEFAULT_DPI) / (double)rect.height();
 }
 
 // returns dpi that will scale the pdf page to fit the viewport dimentions

@@ -174,9 +174,6 @@ int main(int argc, char **argv) {
         string pdf_dir = get_pdf_dir(pdf_path);
         string frames_dir = get_frames_dir(pdf_dir);
 
-        make_pdf_dir(pdf_dir);
-        make_frames_dir(frames_dir);
-
         pdf = poppler::document::load_from_file(pdf_path);
         int pages = pdf->pages();
         poppler::rectf rect = pdf->create_page(0)->page_rect(poppler::media_box);
@@ -191,6 +188,9 @@ int main(int argc, char **argv) {
             vp.height = rect.height();
             // std::cout << "h: " << vp.height << std::endl;
         }
+
+        make_pdf_dir(pdf_dir);
+        make_frames_dir(frames_dir);
 
         pdf_to_images(pdf_dir, pdf, vp, style);
 

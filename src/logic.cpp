@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
+#include <opencv2/core/types.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
@@ -150,13 +151,36 @@ void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, st
 void generate_sequence_frames(string frames_dir, int pages, vector<cv::Mat> images, struct VP &vp) {
     int count = 0;
     std::cout << "Generating video frames..." << std::endl;
+    cv::Mat vp_img;
+
     for (int i = 0; i < (int)images.size(); i ++) {
-        for (int j = 0; j < (int)(vp.fps * vp.spp); j++) {
-            string path = frames_dir + get_frame_name(count) + ".jpg";
-            // std::cout << path << std::endl;
-            cv::imwrite(path, images[i], {cv::IMWRITE_JPEG_QUALITY, 90});
-            count++;
+        vp_img = cv::Mat(vp.height, vp.width, CV_8UC3, cv::Scalar(0, 0, 0));
+        cv::Mat img(images[i]);
+        int x = 0;
+        int y = 0;
+
+        // std::cout << "img_cols: " << img.cols << "\timg_rows: " << img.rows << std::endl;
+        // std::cout << "vp_cols: " << vp_img.cols << "\tvp_rows: " << vp_img.rows << std::endl;
+        // std::cout << "X: " << x << "\tY: " << y << std::endl;
+
+        // adds offset
+        if (vp_img.cols - img.cols >= 2) {
+            x += (vp_img.cols - img.cols) / 2;
+        } else if (vp_img.rows - img.rows >= 2) {
+            y += (vp_img.rows - img.rows) / 2;
         }
+
+        // std::cout << "X: " << x << "\tY: " << y << std::endl;
+
+        // prevents stretching of images when being rendered.
+        // keeps them within the vp.
+        cv::Rect2i roi(x, y, img.cols, img.rows);
+        img.copyTo(vp_img(roi));
+
+        string path = frames_dir + get_frame_name(count) + ".jpg";
+        // std::cout << path << std::endl;
+        cv::imwrite(path, vp_img, {cv::IMWRITE_JPEG_QUALITY, 90});
+        count++;
     }
 }
 
@@ -252,19 +276,30 @@ double get_scaled_dpi_from_height(poppler::page *page, int height) {
 
 // returns dpi that will scale the pdf page to fit the viewport dimentions
 double get_scaled_dpi(poppler::page *page, struct VP &vp) {
-    double dpi_w = DEFAULT_DPI;
-    double dpi_h = DEFAULT_DPI;
+    double dpi_w;
+    double dpi_h;
     poppler::rectf rect = page->page_rect(poppler::media_box);
 
-    if (rect.width() > vp.width) {
+    if (rect.width() > vp.width && rect.height() > vp.height) {
         dpi_w = ((double)vp.width * DEFAULT_DPI) / rect.width();
-    }
-    if (rect.height() > vp.height) {
         dpi_h = ((double)vp.height * DEFAULT_DPI) / rect.height();
+        return std::min(dpi_w, dpi_h);
+    }
+    if (rect.width() < vp.width && rect.height() < vp.height) {
+        dpi_w = ((double)vp.width * DEFAULT_DPI) / rect.width();
+        dpi_h = ((double)vp.height * DEFAULT_DPI) / rect.height();
+        return std::min(dpi_w, dpi_h);
+    }
+    if (rect.width() > vp.width && rect.height() <= vp.height) {
+        dpi_w = ((double)vp.width * DEFAULT_DPI) / rect.width();
+        return dpi_w;
+    }
+    if (rect.width() <= vp.width && rect.height() > vp.height) {
+        dpi_h = ((double)vp.height * DEFAULT_DPI) / rect.height();
+        return dpi_h;
     }
 
-    // ensures that the entire page fits inside of the viewport;
-    return std::min(dpi_w, dpi_h);
+    return DEFAULT_DPI;
 }
 
 string get_pdf_dir(string pdf_path) {

@@ -132,6 +132,9 @@ void generate_video(string pdf_dir, string frames_dir, string output, struct VP 
 
 void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, struct VP &vp) {
     int pixels_translated = (double)long_image.rows / (vp.fps * vp.spp * pages);
+    if (pixels_translated == 0) {
+        pixels_translated = 1;
+    }
     int height = long_image.rows - vp.height; // - vp.rows prevents out of bounds error with cv::Rect roi
     cv::Mat tmp_img(vp.height, vp.width, CV_8UC3);
 

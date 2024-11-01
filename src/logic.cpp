@@ -10,6 +10,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <filesystem>
 #include <utility>
@@ -68,12 +69,6 @@ void scale_images_to_fit(vector<cv::Mat> &images, struct VP &vp) {
             scale_h = (double)vp.height / (double)img.rows;
             scale = scale_h;
         }
-
-        std::cout << "Scale: " << scale << std::endl;
-        std::cout << "scale_h: " << scale_h << std::endl;
-        std::cout << "scale_w: " << scale_w << std::endl;
-        std::cout << "rows: " << img.rows << std::endl;
-        std::cout << "cols: " << img.cols << std::endl;
 
         cv::Mat new_img;
         cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
@@ -231,7 +226,13 @@ vector<cv::Mat> get_images(string dir) {
         if (!fs::is_directory(entry)) {
             path = entry.path().string();
             string name = entry.path().filename().string();
-            index = std::stoi(name.substr(0, name.length() - name.find_last_of('.')));
+            try {
+                index = std::stoi(name.substr(0, name.length() - name.find_last_of('.')));
+            } catch (const std::invalid_argument& e) {
+                std::cerr << "Invalid Argument: " << name << " contains no int, error using std::stoi()." << std::endl;
+            } catch (const std::out_of_range& e) {
+                std::cerr << "Out of Range:, get_images()." << std::endl;
+            }
             image_map.insert(std::make_pair(index, path));
             // std::cout << "index: " << index << "  path: " << path << std::endl;
         }

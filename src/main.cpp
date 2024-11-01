@@ -38,8 +38,8 @@ namespace fs = std::filesystem;
 // void scale_images_to_height(&vector<cv::Mat>, dst_height) keeps og aspect ratio
 
 int main(int argc, char **argv) {
-    int width = 1920;
-    int height = 1080;
+    int width = 1280;
+    int height = 720;
     double fps = 1.0;
     double spp = 1.0;
     string vid_fmt = "MP4";
@@ -110,18 +110,8 @@ int main(int argc, char **argv) {
                 std::cerr << "Error: Video format not currently supported." << std::endl;
                 return 1;
             }
-        } else if (arg == "--style") {
-            i++;
-            string s = argv[i];
-            if (s != "SCROLL" && s != "SEQUENCE") {
-                std::cerr << "Error: style argument is not valid." << std::endl;
-                return 1;
-            }
-            if (s == "SCROLL") {
-                style = Style::SCROLL;
-            } else if (s == "SEQUENCE") {
-                style = Style::SEQUENCE;
-            }
+        } else if (arg == "--scroll") {
+            style = Style::SCROLL;
         } else if (arg == "--keep") {
             keep = true;
         } else {
@@ -129,6 +119,8 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
+
+    // Info presented before continuing.
     if (pdf_path != "") {
         std::cout << "PDF Path: " << pdf_path << std::endl;
     }
@@ -141,11 +133,11 @@ int main(int argc, char **argv) {
     std::cout << "Format: " << vid_fmt << std::endl;
     if (style == Style::SCROLL) {
         std::cout << "Style: SCROLL" << std::endl;
-    } else {
+    } else if (style == Style::SEQUENCE) {
         std::cout << "Style: SEQUENCE" << std::endl;
     }
 
-    // Safety check
+    // Continuing logic
     string check;
     std::cout << "Are these values correct: [Y/n]" << std::endl;
     std::getline(std::cin, check);
@@ -224,14 +216,14 @@ int main(int argc, char **argv) {
             vp.height = images[0].rows;
         }
 
-        int img_cnt = images.size();
+        int img_count = images.size();
         if (style == Style::SCROLL) {
             scale_images_to_width(images, vp.width);
-            cv::Mat long_img = get_long_image(img_cnt, images, vp);
-            generate_scroll_frames(frames_dir, img_cnt, long_img, vp);
+            cv::Mat long_img = get_long_image(img_count, images, vp);
+            generate_scroll_frames(frames_dir, img_count, long_img, vp);
         } else if (style == Style::SEQUENCE) {
             scale_images_to_fit(images, vp);
-            generate_sequence_frames(frames_dir, img_cnt, images, vp);
+            generate_sequence_frames(frames_dir, img_count, images, vp);
         }
 
         string output = img_seq_dir.substr(0, img_seq_dir.length() - 1) + "." + vp.fmt;

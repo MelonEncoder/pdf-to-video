@@ -11,32 +11,6 @@ using std::string;
 // using std::vector;
 namespace fs = std::filesystem;
 
-// Input:
-// pdf || dir of numbered images
-//
-// Default:
-// pdf_to_video(sequence, full_res) 1sec, 1fps,
-//
-// Functions:
-// Viewport create_viewport(keep_aspect_ratio)
-//
-// void pdf_to_video(scroll, scaled)
-// void pdf_to_video(scroll, full_res)
-// void pdf_to_video(sequence, scaled)
-// void pdf_to_video(sequence, full_res)
-//
-// void images_to_video(scroll, scaled)
-// void images_to_video(scroll, full_res)
-// void images_to_video(sequence, scaled)
-// void images_to_video(sequence, full_res)
-//
-// void pdf_to_images(scaled)
-// void pdf_to_images(full_res)
-//
-// void pad_image_names(dir) : [ 1, 10, 100 ] -> [ 001, 010, 100 ]
-// void scale_images_to_width(&vector<cv::Mat>, dst_width) keeps og aspect ratio
-// void scale_images_to_height(&vector<cv::Mat>, dst_height) keeps og aspect ratio
-
 int main(int argc, char **argv) {
     int width = 1280;
     int height = 720;
@@ -69,17 +43,15 @@ int main(int argc, char **argv) {
             i++;
             string path = argv[i];
             if (img_seq_dir != "") {
-                std::cerr << "Error: Cannot convert image directory and PDF. Choose one." << std::endl;
+                std::cerr << "<!> Error: Cannot convert Image Sequence and PDF at the same time." << std::endl;
+                return 1;
             }
             if (!fs::exists(path)) {
-                std::cerr << "Error: PDF path does not exist." << std::endl;
-            }
-            if (fs::is_directory(path)) {
-                std::cerr << "Error: PDF path is a directory. Try again." << std::endl;
+                std::cerr << "<!> Error: PDF path does not exist." << std::endl;
                 return 1;
             }
             if (path.substr(path.length() - 4, 4) != ".pdf") {
-                std::cout << "Error: PDF path not a .pdf file" << std::endl;
+                std::cout << "<!> Error: PDF path not a .pdf file" << std::endl;
                 return 1;
             }
             pdf_path = argv[i];
@@ -87,13 +59,11 @@ int main(int argc, char **argv) {
             i++;
             string dir = argv[i];
             if (pdf_path != "") {
-                std::cerr << "Error: Cannot convert image directory and PDF. Choose one." << std::endl;
-            }
-            if (!fs::exists(dir)) {
-                std::cerr << "Error: dir path does not exist." << std::endl;
+                std::cerr << "<!> Error: Cannot convert PDF and Image Sequence at the same time." << std::endl;
+                return 1;
             }
             if (!fs::is_directory(dir)) {
-                std::cerr << "Error: dir path is not a directory. Try again." << std::endl;
+                std::cerr << "<!> Error: directory path dosen't exist. Try again." << std::endl;
                 return 1;
             }
             img_seq_dir = argv[i];
@@ -107,7 +77,7 @@ int main(int argc, char **argv) {
             i++;
             vid_fmt = argv[i];
             if (vid_fmt != "MP4" && vid_fmt != "AVI" && vid_fmt != "MOV") {
-                std::cerr << "Error: Video format not currently supported." << std::endl;
+                std::cerr << "<!> Error: Video format not currently supported." << std::endl;
                 return 1;
             }
         } else if (arg == "--scroll") {
@@ -115,10 +85,13 @@ int main(int argc, char **argv) {
         } else if (arg == "--keep") {
             keep = true;
         } else {
-            std::cerr << "Error: unknown argument detected: " << argv[i] << std::endl;
+            std::cerr << "<!> Error: unknown argument detected: " << argv[i] << std::endl;
             return 1;
         }
     }
+
+    // pdf_loading_test();
+    // return 1;
 
     // Info presented before continuing.
     if (pdf_path != "") {
@@ -187,12 +160,16 @@ int main(int argc, char **argv) {
             cv::Mat long_img = get_long_image(pages, pdf_dir, vp);
             generate_scroll_frames(frames_dir, pages, long_img, vp);
         } else if (style == Style::SEQUENCE) {
-            vector<cv::Mat> images = get_images(img_seq_dir);
+            std::cout << "1" << std::endl;
+            vector<cv::Mat> images = get_images(pdf_dir);
+            std::cout << "2" << std::endl;
             generate_sequence_frames(frames_dir, pages, images, vp);
+            std::cout << "3" << std::endl;
         }
 
         string output = pdf_path.substr(0, pdf_path.length() - 4) + "." + vp.fmt;
         generate_video(frames_dir, output, vp);
+        std::cout << "4" << std::endl;
 
         if (!keep) {
             delete_dir(frames_dir);

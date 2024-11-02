@@ -13,12 +13,11 @@
 using std::string;
 using std::vector;
 
-void scale_img_to_width(cv::Mat &image, int new_width);
-void scale_img_to_height(cv::Mat &image, int new_height);
-void scale_images_to_width(vector<cv::Mat> &images, int new_width);
-void scale_images_to_fit(vector<cv::Mat> &images, struct VP &vp);
+// void pdf_loading_test();
 
-void pad_image_names(string dir);
+void scale_images_to_width(vector<cv::Mat> &images, int dst_width);
+void scale_images_to_height(vector<cv::Mat> &images, int dst_height);
+void scale_images_to_fit(vector<cv::Mat> &images, struct VP &vp);
 
 void pdf_to_images(string pdf_dir, poppler::document *pdf, struct VP &vp, Style style);
 

@@ -22,23 +22,23 @@ using std::string;
 using std::vector;
 namespace fs = std::filesystem;
 
-void scale_img_to_width(cv::Mat &image, int new_width) {
-    cv::Mat new_img;
-    double scale = (double)new_width / (double)image.cols;
-    cv::resize(image, new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
-    image = new_img;
-}
-void scale_img_to_height(cv::Mat &image, int new_height) {
-    cv::Mat new_img;
-    double scale = (double)new_height / (double)image.rows;
-    cv::resize(image, new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
-    image = new_img;
-}
+// void pdf_loading_test() {
 
-void scale_images_to_width(vector<cv::Mat> &images, int new_width) {
+// }
+
+void scale_images_to_width(vector<cv::Mat> &images, int dst_width) {
     for (int i = 0; i < (int)images.size(); i++) {
         cv::Mat new_img;
-        double scale = (double)new_width / (double)images[i].cols;
+        double scale = (double)dst_width / (double)images[i].cols;
+        cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
+        images[i] = new_img;
+    }
+}
+
+void scale_images_to_height(vector<cv::Mat> &images, int dst_height) {
+    for (int i = 0; i < (int)images.size(); i++) {
+        cv::Mat new_img;
+        double scale = (double)dst_height / (double)images[i].cols;
         cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
         images[i] = new_img;
     }
@@ -73,30 +73,6 @@ void scale_images_to_fit(vector<cv::Mat> &images, struct VP &vp) {
         cv::Mat new_img;
         cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
         images[i] = new_img;
-    }
-}
-
-// dir contains numbered images
-void pad_image_names(string dir) {
-    vector<string> old_paths;
-    vector<string> img_names;
-    vector<string> file_extensions;
-
-    for (const auto &entry : fs::directory_iterator(dir)) {
-        if (!fs::is_directory(entry)) {
-            string file_name = entry.path().filename().string();
-
-            img_names.push_back(file_name.substr(0, file_name.find('.')));
-            file_extensions.push_back(file_name.substr(file_name.find('.')));
-            old_paths.push_back(entry.path().string());
-        }
-    }
-
-    for (int i = 0; i < (int)old_paths.size(); i++) {
-        string new_path = dir + get_page_name(std::stoi(img_names[i]), old_paths.size()) + file_extensions[i];
-        if (std::rename(old_paths[i].c_str(), new_path.c_str())) {
-            std::cerr << "Error renaming " + old_paths[i] << std::endl;
-        }
     }
 }
 
@@ -148,7 +124,7 @@ void generate_video(string frames_dir, string output, struct VP &vp) {
         cmd += " " + arg;
     }
 
-    std::cout << "CMD: " << cmd << std::endl;
+    std::cout << "FFmpeg CMD: " << cmd << std::endl;
 
     std::cout << "Generating video..." << std::endl;
     std::system(cmd.c_str());
@@ -164,9 +140,7 @@ void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, st
     int height = long_image.rows - vp.height; // - vp.rows prevents out of bounds error with cv::Rect roi
     cv::Mat tmp_img(vp.height, vp.width, CV_8UC3);
 
-    // std::cout << "height: " << long_image.rows << " width: " << long_image.cols << std::endl;
-    std::cout << "pixels per frame: " << pixels_translated << std::endl;
-    // std::cout << "total_height: " << height << std::endl;
+    std::cout << "Pixels per frame: " << pixels_translated << std::endl;
 
     std::cout << "Generating video frames..." << std::endl;
     for (int h = 0, i = 0; h < height; h += pixels_translated, i++) {
@@ -188,18 +162,12 @@ void generate_sequence_frames(string frames_dir, int pages, vector<cv::Mat> imag
         int x = 0;
         int y = 0;
 
-        // std::cout << "img_cols: " << img.cols << "\timg_rows: " << img.rows << std::endl;
-        // std::cout << "vp_cols: " << vp_img.cols << "\tvp_rows: " << vp_img.rows << std::endl;
-        // std::cout << "X: " << x << "\tY: " << y << std::endl;
-
         // adds offset
         if (vp_img.cols - img.cols >= 2) {
             x += (vp_img.cols - img.cols) / 2;
         } else if (vp_img.rows - img.rows >= 2) {
             y += (vp_img.rows - img.rows) / 2;
         }
-
-        // std::cout << "X: " << x << "\tY: " << y << std::endl;
 
         // prevents stretching of images when being rendered.
         // keeps them within the vp.
@@ -220,6 +188,7 @@ string get_frames_dir(string pdf_dir) {
 vector<cv::Mat> get_images(string dir) {
     vector<cv::Mat> images;
     std::map<int, string> image_map;
+    // creates hash-map of valid image paths in numerical order
     for (const auto &entry : fs::directory_iterator(dir)) {
         string path;
         int index;
@@ -229,12 +198,11 @@ vector<cv::Mat> get_images(string dir) {
             try {
                 index = std::stoi(name.substr(0, name.length() - name.find_last_of('.')));
             } catch (const std::invalid_argument& e) {
-                std::cerr << "Invalid Argument: " << name << " contains no int, error using std::stoi()." << std::endl;
+                std::cerr << "<!> Invalid Argument: " << name << " contains no int so is not used." << std::endl;
             } catch (const std::out_of_range& e) {
-                std::cerr << "Out of Range:, get_images()." << std::endl;
+                std::cerr << "<!> Out of Range: geting int value from image name, get_images()." << std::endl;
             }
             image_map.insert(std::make_pair(index, path));
-            // std::cout << "index: " << index << "  path: " << path << std::endl;
         }
     }
     // reads images in numerical order
@@ -245,9 +213,10 @@ vector<cv::Mat> get_images(string dir) {
         cv::Mat tmp = cv::imread(image_map[i]);
 
         // makes dimentions of the image divisible by 2.
-        // ffmpeg will get upset if otherwise
+        // ffmpeg will get upset if otherwise.
         int rows = tmp.rows % 2 != 0 ? tmp.rows + 1 : tmp.rows;
         int cols = tmp.cols % 2 != 0 ? tmp.cols + 1 : tmp.cols;
+
         cv::Rect2i roi(0, 0, tmp.cols, tmp.rows);
         cv::Mat tmp2(rows, cols, CV_8UC3);
         tmp.copyTo(tmp2(roi));
@@ -297,13 +266,11 @@ cv::Mat get_long_image(int total_images, string images_dir, struct VP &vp) {
     // sequentually adds all pages of pdf in order to long_image.
     for (int i = 0, h = vp.height; i < total_images; i++) {
         cv::Mat tmp_img = images[i];
-        // std::cout << tmp_img.rows << std::endl;
         // ROI -> Region of Interest
         cv::Rect roi = cv::Rect(0, h, long_image.cols, tmp_img.rows);
         tmp_img.copyTo(long_image(roi));
         h += tmp_img.rows;
     }
-    // cv::imwrite("../longboy.jpg", long_image);
 
     return long_image;
 }
@@ -325,13 +292,11 @@ cv::Mat get_long_image(int total_images, vector<cv::Mat> &images, struct VP &vp)
     // sequentually adds all pages of pdf in order to long_image.
     for (int i = 0, h = vp.height; i < total_images; i++) {
         cv::Mat tmp_img = images[i];
-        // std::cout << tmp_img.rows << std::endl;
         // ROI -> Region of Interest
         cv::Rect roi = cv::Rect(0, h, long_image.cols, tmp_img.rows);
         tmp_img.copyTo(long_image(roi));
         h += tmp_img.rows;
     }
-    // cv::imwrite("../longboy.jpg", long_image);
 
     return long_image;
 }
@@ -339,7 +304,6 @@ cv::Mat get_long_image(int total_images, vector<cv::Mat> &images, struct VP &vp)
 // returns dpi to scale page to viewport width
 double get_scaled_dpi_from_width(poppler::page *page, int width) {
     auto rect = page->page_rect(poppler::media_box);
-    // std::cout << "Rect_w: " << rect.width() << "  width: " << width << std::endl;
 
     if (rect.width() == width) {
         return DEFAULT_DPI;
@@ -394,7 +358,7 @@ bool delete_dir(string dir) {
     if (fs::is_directory(dir)) {
         return fs::remove_all(fs::path(dir));
     }
-    std::cout << "Error: cannot delete " << dir << "" << std::endl;
+    std::cout << "<!> Error: cannot delete " << dir << "" << std::endl;
     return false;
 }
 

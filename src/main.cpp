@@ -21,7 +21,6 @@ int main(int argc, char **argv) {
     string pdf_path = "";
     string img_seq_dir = "";
     bool keep = false;
-    poppler::document *pdf;
 
     if (argc < 2) {
         std::cerr << HELP_TXT << std::endl;
@@ -136,14 +135,13 @@ int main(int argc, char **argv) {
     // Application Logic
     // converting pdf to video
     if (pdf_path != "") {
+        poppler::document *pdf = poppler::document::load_from_file(pdf_path);
+        int pages = pdf->pages();
         string pdf_dir = get_pdf_dir(pdf_path);
         string frames_dir = get_frames_dir(pdf_dir);
 
-        pdf = poppler::document::load_from_file(pdf_path);
-        int pages = pdf->pages();
-        poppler::rectf rect = pdf->create_page(0)->page_rect(poppler::media_box);
-
         // sets viewport's with/height to full res of first pdf page
+        poppler::rectf rect = pdf->create_page(0)->page_rect(poppler::media_box);
         if (width == -1) {
             vp.width = rect.width();
         }
@@ -160,16 +158,12 @@ int main(int argc, char **argv) {
             cv::Mat long_img = get_long_image(pages, pdf_dir, vp);
             generate_scroll_frames(frames_dir, pages, long_img, vp);
         } else if (style == Style::SEQUENCE) {
-            std::cout << "1" << std::endl;
             vector<cv::Mat> images = get_images(pdf_dir);
-            std::cout << "2" << std::endl;
             generate_sequence_frames(frames_dir, pages, images, vp);
-            std::cout << "3" << std::endl;
         }
 
         string output = pdf_path.substr(0, pdf_path.length() - 4) + "." + vp.fmt;
         generate_video(frames_dir, output, vp);
-        std::cout << "4" << std::endl;
 
         if (!keep) {
             delete_dir(frames_dir);
@@ -182,8 +176,6 @@ int main(int argc, char **argv) {
     // converting image sequence to video
     if (img_seq_dir != "") {
         string frames_dir = get_frames_dir(img_seq_dir);
-        make_frames_dir(frames_dir);
-
         vector<cv::Mat> images = get_images(img_seq_dir);
 
         if (width == -1) {
@@ -192,6 +184,8 @@ int main(int argc, char **argv) {
         if (height == -1) {
             vp.height = images[0].rows;
         }
+
+        make_frames_dir(frames_dir);
 
         int img_count = images.size();
         if (style == Style::SCROLL) {

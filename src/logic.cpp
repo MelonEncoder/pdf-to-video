@@ -17,6 +17,7 @@
 #include <vector>
 #include <cstdlib>
 #include <cstdio>
+#include <ctime>
 
 using std::string;
 using std::vector;
@@ -102,11 +103,38 @@ void pdf_to_images(string pdf_dir, poppler::document *pdf, struct VP &vp, Style 
     }
 }
 
+void make_frames_dir(string frames_dir) {
+    if (fs::exists(frames_dir)) {
+        std::cout << "Frames directory already exists." << std::endl;
+    }
+    else {
+        fs::create_directory(frames_dir);
+        std::cout << "Created frames directory." << std::endl;
+    }
+}
+
+void make_pdf_dir(string pdf_dir) {
+    if (!fs::exists(pdf_dir)) {
+        fs::create_directory(pdf_dir);
+        std::cout << "Created PDF directory." << std::endl;
+    } else {
+        std::cout << "PDF directory already exists." << std::endl;
+    }
+}
+
+string format_path(string str) {
+    string bad_chars = " ()&-<>";
+    for (int i = 0; i < (int)str.length(); i++) {
+        if ((int)bad_chars.find(str[i]) > -1) {
+            str[i] = '_';
+        }
+    }
+    return str;
+}
+
 void generate_video(string frames_dir, string output, struct VP &vp) {
-    // ffmpeg -f image2 -framerate 12 -i ./%04d.jpg -s 1920x1080 e.mp4
-    // ffmpeg -framerate 1/2 -i "%04d.jpg" -c:v libx264 -crf 23 -preset medium -vf scale=1280:-1 output.mp4
     while (fs::exists(output)) {
-        output.insert(output.length() - 4, "+");
+        output.insert((output.length() - 4), 1, '+');
     }
 
     vector<string> cmd_args = {
@@ -142,7 +170,6 @@ void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, st
 
     std::cout << "Pixels per frame: " << pixels_translated << std::endl;
 
-    std::cout << "Generating video frames..." << std::endl;
     for (int h = 0, i = 0; h < height; h += pixels_translated, i++) {
         cv::Rect roi = cv::Rect(0, h, vp.width, vp.height);
         long_image(roi).copyTo(tmp_img);
@@ -153,7 +180,6 @@ void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, st
 
 void generate_sequence_frames(string frames_dir, int pages, vector<cv::Mat> images, struct VP &vp) {
     int count = 0;
-    std::cout << "Generating video frames..." << std::endl;
     cv::Mat vp_img;
 
     for (int i = 0; i < (int)images.size(); i ++) {
@@ -175,14 +201,25 @@ void generate_sequence_frames(string frames_dir, int pages, vector<cv::Mat> imag
         img.copyTo(vp_img(roi));
 
         string path = frames_dir + get_frame_name(count) + ".jpg";
-        // std::cout << path << std::endl;
         cv::imwrite(path, vp_img, {cv::IMWRITE_JPEG_QUALITY, 90});
         count++;
     }
 }
 
-string get_frames_dir(string pdf_dir) {
-    return pdf_dir + "frames/";
+string get_frames_dir(string dir) {
+    std::srand(std::time(0));
+    int rand_num = std::rand() % 999999 + 100000;
+
+    int end = dir.length() - 1;
+    for (int i = dir.length() - 2; i > -1; i--) {
+        if (dir[i] == '/') {
+            end = i + 1;
+            break;
+        }
+    }
+
+    string result = dir.substr(0, end) + "ptv-" + std::to_string(rand_num) + "-frames/";
+    return result;
 }
 
 vector<cv::Mat> get_images(string dir) {
@@ -226,25 +263,6 @@ vector<cv::Mat> get_images(string dir) {
     return images;
 }
 
-void make_frames_dir(string frames_dir) {
-    if (fs::exists(frames_dir)) {
-        std::cout << "Frames directory already exists." << std::endl;
-    }
-    else {
-        fs::create_directory(frames_dir);
-        std::cout << "Created frames directory." << std::endl;
-    }
-}
-
-void make_scaled_dir(string scaled_dir) {
-    if (fs::exists(scaled_dir)) {
-        std::cout << "Frames directory already exists." << std::endl;
-    }
-    else {
-        fs::create_directory(scaled_dir);
-        std::cout << "Created frames directory." << std::endl;
-    }
-}
 
 cv::Mat get_long_image(int total_images, string images_dir, struct VP &vp) {
     int height = 0;
@@ -345,26 +363,13 @@ string get_pdf_dir(string pdf_path) {
     return pdf_dir;
 }
 
-void make_pdf_dir(string pdf_dir) {
-    if (!fs::exists(pdf_dir)) {
-        fs::create_directory(pdf_dir);
-        std::cout << "Created PDF directory." << std::endl;
-    } else {
-        std::cout << "PDF directory already exists." << std::endl;
-    }
-}
 
-bool delete_dir(string dir) {
-    if (fs::is_directory(dir)) {
-        return fs::remove_all(fs::path(dir));
-    }
-    std::cout << "<!> Error: cannot delete " << dir << "" << std::endl;
-    return false;
-}
 
 string get_pdf_name(string pdf_path) {
     return pdf_path.substr(pdf_path.find_last_of("/") + 1, pdf_path.length() - 7);
 }
+
+
 
 // returns numerical name as string no file extension
 string get_frame_name(int index) {
@@ -426,4 +431,12 @@ string get_page_name(int index, int pages) {
         }
     }
     return "z";
+}
+
+bool delete_dir(string dir) {
+    if (fs::is_directory(dir)) {
+        return fs::remove_all(fs::path(dir));
+    }
+    std::cout << "<!> Error: cannot delete " << dir << "" << std::endl;
+    return false;
 }

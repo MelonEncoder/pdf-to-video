@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
                 std::cout << "<!> Error: PDF path not a .pdf file" << std::endl;
                 return 1;
             }
-            pdf_path = argv[i];
+            pdf_path = path;
         } else if (arg == "-i") {
             i++;
             string dir = argv[i];
@@ -65,7 +65,10 @@ int main(int argc, char **argv) {
                 std::cerr << "<!> Error: directory path dosen't exist. Try again." << std::endl;
                 return 1;
             }
-            img_seq_dir = argv[i];
+            if (dir[dir.length() - 1] != '/') {
+                dir.push_back('/');
+            }
+            img_seq_dir = dir;
         } else if (arg == "-f") {
             i++;
             fps = std::stof(argv[i]);
@@ -156,13 +159,16 @@ int main(int argc, char **argv) {
 
         if (style == Style::SCROLL) {
             cv::Mat long_img = get_long_image(pages, pdf_dir, vp);
+            std::cout << "Generating video frames..." << std::endl;
             generate_scroll_frames(frames_dir, pages, long_img, vp);
         } else if (style == Style::SEQUENCE) {
             vector<cv::Mat> images = get_images(pdf_dir);
+            std::cout << "Generating video frames..." << std::endl;
             generate_sequence_frames(frames_dir, pages, images, vp);
         }
 
-        string output = pdf_path.substr(0, pdf_path.length() - 4) + "." + vp.fmt;
+        string fmt_dir = format_path(pdf_dir);
+        string output = fmt_dir.substr(0, fmt_dir.length() - 1) + "." + vp.fmt;
         generate_video(frames_dir, output, vp);
 
         if (!keep) {
@@ -191,13 +197,16 @@ int main(int argc, char **argv) {
         if (style == Style::SCROLL) {
             scale_images_to_width(images, vp.width);
             cv::Mat long_img = get_long_image(img_count, images, vp);
+            std::cout << "Generating video frames..." << std::endl;
             generate_scroll_frames(frames_dir, img_count, long_img, vp);
         } else if (style == Style::SEQUENCE) {
             scale_images_to_fit(images, vp);
+            std::cout << "Generating video frames..." << std::endl;
             generate_sequence_frames(frames_dir, img_count, images, vp);
         }
 
-        string output = img_seq_dir.substr(0, img_seq_dir.length() - 1) + "." + vp.fmt;
+        string fmt_dir = format_path(img_seq_dir);
+        string output = fmt_dir.substr(0, fmt_dir.length() - 1) + "." + vp.fmt;
         generate_video(frames_dir, output, vp);
 
         if (!keep) {

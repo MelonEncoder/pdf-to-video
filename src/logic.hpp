@@ -38,8 +38,10 @@ void make_frames_dir(string frames_dir);
 void make_scaled_dir(string scaled_dir);
 void make_pdf_dir(string pdf_dir);
 
+string format_path(string str);
+
+void generate_video(string frames_dir, string output, struct VP &vp);
 void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, struct VP &vp);
 void generate_sequence_frames(string frames_dir, int pages, vector<cv::Mat> images, struct VP &vp);
-void generate_video(string frames_dir, string output, struct VP &vp);
 
 bool delete_dir(string dir);

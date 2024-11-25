@@ -23,10 +23,6 @@ using std::string;
 using std::vector;
 namespace fs = std::filesystem;
 
-// void pdf_loading_test() {
-
-// }
-
 void scale_images_to_width(vector<cv::Mat> &images, int dst_width) {
     for (int i = 0; i < (int)images.size(); i++) {
         cv::Mat new_img;
@@ -261,36 +257,6 @@ vector<cv::Mat> get_images(string dir) {
         images.push_back(cv::Mat(tmp2));
     }
     return images;
-}
-
-
-cv::Mat get_long_image(int total_images, string images_dir, struct VP &vp) {
-    int height = 0;
-    vector<cv::Mat> images;
-    cv::Mat long_image;
-
-    // stores exported pdf pages as images in vector.
-    for (int i = 0; i < total_images; i++) {
-        cv::Mat tmp_img = cv::imread(images_dir + get_page_name(i, total_images) + ".jpg", cv::IMREAD_COLOR);
-        height += tmp_img.rows;
-        images.push_back(tmp_img);
-    }
-    // adds white space before and after content.
-    height += vp.height * 2;
-
-    // images that will contain all contents of pdf
-    long_image = cv::Mat(height, vp.width, CV_8UC3);
-
-    // sequentually adds all pages of pdf in order to long_image.
-    for (int i = 0, h = vp.height; i < total_images; i++) {
-        cv::Mat tmp_img = images[i];
-        // ROI -> Region of Interest
-        cv::Rect roi = cv::Rect(0, h, long_image.cols, tmp_img.rows);
-        tmp_img.copyTo(long_image(roi));
-        h += tmp_img.rows;
-    }
-
-    return long_image;
 }
 
 cv::Mat get_long_image(int total_images, vector<cv::Mat> &images, struct VP &vp) {

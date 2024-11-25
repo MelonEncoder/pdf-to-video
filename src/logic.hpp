@@ -30,7 +30,6 @@ string get_pdf_dir(string pdf_path);
 string get_pdf_name(string pdf_path);
 string get_scaled_dir(string img_seq_dir);
 string get_page_name(int index, int pages);
-cv::Mat get_long_image(int pages, string images_dir, struct VP &vp);
 cv::Mat get_long_image(int pages, vector<cv::Mat> &images, struct VP &vp);
 vector<cv::Mat> get_images(string dir);
 

@@ -152,17 +152,21 @@ int main(int argc, char **argv) {
             vp.height = rect.height();
         }
 
+        std::vector<cv::Mat> imgs = {};
+
+
         make_pdf_dir(pdf_dir);
         make_frames_dir(frames_dir);
 
         pdf_to_images(pdf_dir, pdf, vp, style);
 
+        vector<cv::Mat> images = get_images(pdf_dir);
+
         if (style == Style::SCROLL) {
-            cv::Mat long_img = get_long_image(pages, pdf_dir, vp);
+            cv::Mat long_img = get_long_image(pages, images, vp);
             std::cout << "Generating video frames..." << std::endl;
             generate_scroll_frames(frames_dir, pages, long_img, vp);
         } else if (style == Style::SEQUENCE) {
-            vector<cv::Mat> images = get_images(pdf_dir);
             std::cout << "Generating video frames..." << std::endl;
             generate_sequence_frames(frames_dir, pages, images, vp);
         }

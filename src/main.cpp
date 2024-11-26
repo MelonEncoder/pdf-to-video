@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
     }
     std::cin.clear();
 
-    // lowercase video format
+    // to work with ffmpeg cli, needs lowercase fmt
     for (auto &c : vid_fmt) {
         c = std::tolower(c);
     }

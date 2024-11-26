@@ -1,8 +1,10 @@
+#include "cpp/poppler-rectangle.h"
 #include "poppler.hpp"
 #include "opencv.hpp"
 #include "ptv.hpp"
 #include "logic.hpp"
 #include <algorithm>
+#include <cstddef>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/types.hpp>
@@ -70,32 +72,6 @@ void scale_images_to_fit(vector<cv::Mat> &images, struct VP &vp) {
         cv::Mat new_img;
         cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
         images[i] = new_img;
-    }
-}
-
-void pdf_to_images(string pdf_dir, poppler::document *pdf, struct VP &vp, Style style) {
-    int page_count = pdf->pages();
-    auto renderer = poppler::page_renderer();
-    string image_type = "jpg";
-
-    std::cout << "Generating PDF Pages..." << std::endl;
-    for (int i = 0; i < page_count; i++) {
-        double dpi = DEFAULT_DPI;
-        string pg_name = get_page_name(i, page_count);
-        string path = pdf_dir + pg_name + "." + image_type;
-
-        poppler::page *page = pdf->create_page(i);
-        // just in case pages are different sizes.
-        if (style == Style::SCROLL) {
-            dpi = get_scaled_dpi_from_width(page, vp.width);
-        } else if (style == Style::SEQUENCE) {
-            dpi = get_scaled_dpi(page, vp);
-        }
-
-        poppler::image tmp_img = renderer.render_page(page, dpi, dpi);
-        tmp_img.save(path, image_type);
-
-        std::cout << std::to_string(i + 1) + "/" + std::to_string(page_count) << std::endl;
     }
 }
 
@@ -174,27 +150,26 @@ void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, st
     }
 }
 
-void generate_sequence_frames(string frames_dir, int pages, vector<cv::Mat> images, struct VP &vp) {
+void generate_sequence_frames(string frames_dir, vector<cv::Mat> imgs, struct VP &vp) {
     int count = 0;
     cv::Mat vp_img;
 
-    for (int i = 0; i < (int)images.size(); i ++) {
-        vp_img = cv::Mat(vp.height, vp.width, CV_8UC3, cv::Scalar(0, 0, 0));
-        cv::Mat img(images[i]);
+    for (size_t i = 0; i < imgs.size(); i ++) {
+        vp_img = cv::Mat(vp.height, vp.width, CV_8UC4, cv::Scalar(0, 0, 0));
         int x = 0;
         int y = 0;
 
         // adds offset
-        if (vp_img.cols - img.cols >= 2) {
-            x += (vp_img.cols - img.cols) / 2;
-        } else if (vp_img.rows - img.rows >= 2) {
-            y += (vp_img.rows - img.rows) / 2;
+        if (vp_img.cols - imgs[i].cols >= 2) {
+            x += (vp_img.cols - imgs[i].cols) / 2;
+        } else if (vp_img.rows - imgs[i].rows >= 2) {
+            y += (vp_img.rows - imgs[i].rows) / 2;
         }
 
         // prevents stretching of images when being rendered.
         // keeps them within the vp.
-        cv::Rect2i roi(x, y, img.cols, img.rows);
-        img.copyTo(vp_img(roi));
+        cv::Rect2i roi(x, y, imgs[i].cols, imgs[i].rows);
+        imgs[i].copyTo(vp_img(roi));
 
         string path = frames_dir + get_frame_name(count) + ".jpg";
         cv::imwrite(path, vp_img, {cv::IMWRITE_JPEG_QUALITY, 90});
@@ -202,19 +177,22 @@ void generate_sequence_frames(string frames_dir, int pages, vector<cv::Mat> imag
     }
 }
 
-string get_frames_dir(string dir) {
+string get_frames_dir(string path) {
     std::srand(std::time(0));
     int rand_num = std::rand() % 999999 + 100000;
+    string result;
+    string sub_dir;
 
-    int end = dir.length() - 1;
-    for (int i = dir.length() - 2; i > -1; i--) {
-        if (dir[i] == '/') {
+    int end = path.length() - 1;
+    for (int i = path.length() - 2; i > -1; i--) {
+        if (path[i] == '/') {
             end = i + 1;
             break;
         }
     }
 
-    string result = dir.substr(0, end) + "ptv-" + std::to_string(rand_num) + "-frames/";
+    sub_dir = path.substr(0, end);
+    result = sub_dir + "ptv-frames-" + std::to_string(rand_num) + "/";
     return result;
 }
 
@@ -239,47 +217,109 @@ vector<cv::Mat> get_images(string dir) {
         }
     }
     // reads images in numerical order
-    for (int i = 0; i < (int)image_map.size(); i++) {
-        if (image_map[i] == "") {
-            continue;
-        }
-        cv::Mat tmp = cv::imread(image_map[i]);
+    for (size_t i = 0; i < image_map.size(); i++) {
+        if (image_map[i] == "") continue;
+
+        cv::Mat mat = cv::imread(image_map[i]);
 
         // makes dimentions of the image divisible by 2.
         // ffmpeg will get upset if otherwise.
-        int rows = tmp.rows % 2 != 0 ? tmp.rows + 1 : tmp.rows;
-        int cols = tmp.cols % 2 != 0 ? tmp.cols + 1 : tmp.cols;
+        int rows = mat.rows % 2 != 0 ? mat.rows + 1 : mat.rows;
+        int cols = mat.cols % 2 != 0 ? mat.cols + 1 : mat.cols;
 
-        cv::Rect2i roi(0, 0, tmp.cols, tmp.rows);
-        cv::Mat tmp2(rows, cols, CV_8UC3);
-        tmp.copyTo(tmp2(roi));
+        cv::Rect2i roi(0, 0, mat.cols, mat.rows);
+        cv::Mat tmp_mat(rows, cols, CV_8UC3);
+        mat.copyTo(tmp_mat(roi));
 
-        images.push_back(cv::Mat(tmp2));
+        images.push_back(cv::Mat(tmp_mat));
     }
     return images;
 }
 
-cv::Mat get_long_image(int total_images, vector<cv::Mat> &images, struct VP &vp) {
+vector<cv::Mat> get_images_new(poppler::document *pdf, Style style, VP &vp) {
+    int pages = pdf->pages();
+    auto renderer = poppler::page_renderer();
+    vector<cv::Mat> images = {};
+
+    // required to copy pdf data to vector
+    for (int i = 0; i < pages; i++) {
+        images.emplace_back(cv::Mat(100, 100, CV_8UC3, cv::Scalar(100, 210, 70)));
+    }
+
+    for (int i = 0; i < pages; i++) {
+        int fmt = CV_8UC3;
+        double dpi = DEFAULT_DPI;
+        poppler::page *page = pdf->create_page(i);
+
+        // scales pages to correctly fit inside displayport.
+        if (style == Style::SCROLL) {
+            dpi = get_scaled_dpi_from_width(page, vp.width);
+        } else if (style == Style::SEQUENCE) {
+            dpi = get_scaled_dpi(page, vp);
+        }
+
+        poppler::image img = renderer.render_page(page, dpi, dpi);
+        cv::Mat mat;
+
+        // Determine the format
+        if (img.data() == nullptr) {
+            std::cerr << "<!> Error: Page " << i << " has no data to load." << std::endl;
+        } else if (img.format() == poppler::image::format_invalid) {
+            std::cerr << "<!> Error: Page " << i << " has invalid image format." << std::endl;
+        } else if (img.format() == poppler::image::format_gray8) {
+            fmt = CV_8UC1;
+            mat = cv::Mat(img.height(), img.width(), fmt, img.data(), img.bytes_per_row());
+        } else if (img.format() == poppler::image::format_rgb24) {
+            fmt = CV_8UC3;
+            mat = cv::Mat(img.height(), img.width(), fmt, img.data(), img.bytes_per_row());
+        } else if (img.format() == poppler::image::format_bgr24) {
+            fmt = CV_8UC3;
+            mat = cv::Mat(img.height(), img.width(), fmt, img.data(), img.bytes_per_row());
+        } else if (img.format() == poppler::image::format_argb32) {
+            fmt = CV_8UC4;
+            mat = cv::Mat(img.height(), img.width(), fmt, img.data(), img.bytes_per_row());
+        }
+
+        // makes sure dimentions are even
+        // ffmpeg will get upset if odd
+        if (mat.rows % 2 != 0 || mat.cols % 2 != 0) {
+            int rows = mat.rows % 2 != 0 ? mat.rows + 1 : mat.rows;
+            int cols = mat.cols % 2 != 0 ? mat.cols + 1 : mat.cols;
+
+            cv::Rect2i roi(0, 0, mat.cols, mat.rows);
+            cv::Mat tmp_mat(rows, cols, fmt);
+            mat.copyTo(tmp_mat(roi));
+
+            tmp_mat.copyTo(images[i]);
+        } else {
+            mat.copyTo(images[i]);
+        }
+    }
+
+    return images;
+}
+
+cv::Mat get_long_image(vector<cv::Mat> &imgs, struct VP &vp) {
     int height = 0;
     cv::Mat long_image;
 
     // stores exported pdf pages as images in vector.
-    for (int i = 0; i < total_images; i++) {
-        height += images[i].rows;
+    for (size_t i = 0; i < imgs.size(); i++) {
+        height += imgs[i].rows;
     }
     // adds white space before and after content.
     height += vp.height * 2;
 
     // images that will contain all contents of pdf
-    long_image = cv::Mat(height, vp.width, CV_8UC3);
+    long_image = cv::Mat(height, vp.width, CV_8UC4);
 
     // sequentually adds all pages of pdf in order to long_image.
-    for (int i = 0, h = vp.height; i < total_images; i++) {
-        cv::Mat tmp_img = images[i];
-        // ROI -> Region of Interest
-        cv::Rect roi = cv::Rect(0, h, long_image.cols, tmp_img.rows);
-        tmp_img.copyTo(long_image(roi));
-        h += tmp_img.rows;
+    // ROI -> Region of Interest
+    for (size_t i = 0, h = vp.height; i < imgs.size(); i++) {
+        int r = imgs[i].rows;
+        cv::Rect roi = cv::Rect(0, h, long_image.cols, r);
+        imgs[i].copyTo(long_image(roi));
+        h += r;
     }
 
     return long_image;

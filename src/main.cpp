@@ -6,6 +6,7 @@
 #include <cctype>
 #include <filesystem>
 #include <libavformat/avformat.h>
+#include <opencv2/imgcodecs.hpp>
 
 using std::string;
 // using std::vector;
@@ -139,9 +140,7 @@ int main(int argc, char **argv) {
     // converting pdf to video
     if (pdf_path != "") {
         poppler::document *pdf = poppler::document::load_from_file(pdf_path);
-        int pages = pdf->pages();
-        string pdf_dir = get_pdf_dir(pdf_path);
-        string frames_dir = get_frames_dir(pdf_dir);
+        string frames_dir = get_frames_dir(pdf_path);
 
         // sets viewport's with/height to full res of first pdf page
         poppler::rectf rect = pdf->create_page(0)->page_rect(poppler::media_box);
@@ -152,32 +151,27 @@ int main(int argc, char **argv) {
             vp.height = rect.height();
         }
 
-        std::vector<cv::Mat> imgs = {};
+        std::cout << "Loading pdf pages..." << std::endl;
+        std::vector<cv::Mat> images = get_images_new(pdf, style, vp);
 
-
-        make_pdf_dir(pdf_dir);
         make_frames_dir(frames_dir);
 
-        pdf_to_images(pdf_dir, pdf, vp, style);
-
-        vector<cv::Mat> images = get_images(pdf_dir);
 
         if (style == Style::SCROLL) {
-            cv::Mat long_img = get_long_image(pages, images, vp);
+            cv::Mat long_img = get_long_image(images, vp);
             std::cout << "Generating video frames..." << std::endl;
-            generate_scroll_frames(frames_dir, pages, long_img, vp);
+            generate_scroll_frames(frames_dir, pdf->pages(), long_img, vp);
         } else if (style == Style::SEQUENCE) {
             std::cout << "Generating video frames..." << std::endl;
-            generate_sequence_frames(frames_dir, pages, images, vp);
+            generate_sequence_frames(frames_dir, images, vp);
         }
 
-        string fmt_dir = format_path(pdf_dir);
-        string output = fmt_dir.substr(0, fmt_dir.length() - 1) + "." + vp.fmt;
+        string fmt_path = format_path(pdf_path);
+        string output = fmt_path.substr(0, fmt_path.length() - 4) + "." + vp.fmt;
         generate_video(frames_dir, output, vp);
 
         if (!keep) {
             delete_dir(frames_dir);
-            delete_dir(pdf_dir);
         }
 
         std::cout << "Finished!" << std::endl;
@@ -186,6 +180,7 @@ int main(int argc, char **argv) {
     // converting image sequence to video
     if (img_seq_dir != "") {
         string frames_dir = get_frames_dir(img_seq_dir);
+        std::cout << "Loading images..." << std::endl;
         vector<cv::Mat> images = get_images(img_seq_dir);
 
         if (width == -1) {
@@ -200,13 +195,13 @@ int main(int argc, char **argv) {
         int img_count = images.size();
         if (style == Style::SCROLL) {
             scale_images_to_width(images, vp.width);
-            cv::Mat long_img = get_long_image(img_count, images, vp);
+            cv::Mat long_img = get_long_image(images, vp);
             std::cout << "Generating video frames..." << std::endl;
             generate_scroll_frames(frames_dir, img_count, long_img, vp);
         } else if (style == Style::SEQUENCE) {
             scale_images_to_fit(images, vp);
             std::cout << "Generating video frames..." << std::endl;
-            generate_sequence_frames(frames_dir, img_count, images, vp);
+            generate_sequence_frames(frames_dir, images, vp);
         }
 
         string fmt_dir = format_path(img_seq_dir);

@@ -34,42 +34,38 @@ int main(int argc, char **argv) {
         if (arg == "-h" || arg == "--help") {
             std::cout << HELP_TXT << std::endl;
             return 0;
+        } else if ((int)arg.find(".pdf") > -1) {
+            if (img_seq_dir != "") {
+                std::cerr << "<!> Error: Cannot convert Image Sequence and PDF at the same time." << std::endl;
+                return 1;
+            }
+            if (!fs::exists(arg)) {
+                std::cerr << "<!> Error: PDF path does not exist." << std::endl;
+                return 1;
+            }
+            if (arg.substr(arg.length() - 4, 4) != ".pdf") {
+                std::cout << "<!> Error: PDF path not a .pdf file" << std::endl;
+                return 1;
+            }
+            pdf_path = arg;
+        } else if ((int)arg.find('/') > -1) {
+            if (pdf_path != "") {
+                std::cerr << "<!> Error: Cannot convert PDF and Image Sequence at the same time." << std::endl;
+                return 1;
+            }
+            if (!fs::is_directory(arg)) {
+                std::cerr << "<!> Error: directory path dosen't exist. Try again." << std::endl;
+                return 1;
+            }
+            if (arg[arg.length() - 1] != '/') {
+                arg.push_back('/');
+            }
+            img_seq_dir = arg;
         } else if (arg == "-r") {
             i++;
             width = std::stoi(argv[i]);
             i++;
             height = std::stoi(argv[i]);
-        } else if (arg == "-p") {
-            i++;
-            string path = argv[i];
-            if (img_seq_dir != "") {
-                std::cerr << "<!> Error: Cannot convert Image Sequence and PDF at the same time." << std::endl;
-                return 1;
-            }
-            if (!fs::exists(path)) {
-                std::cerr << "<!> Error: PDF path does not exist." << std::endl;
-                return 1;
-            }
-            if (path.substr(path.length() - 4, 4) != ".pdf") {
-                std::cout << "<!> Error: PDF path not a .pdf file" << std::endl;
-                return 1;
-            }
-            pdf_path = path;
-        } else if (arg == "-i") {
-            i++;
-            string dir = argv[i];
-            if (pdf_path != "") {
-                std::cerr << "<!> Error: Cannot convert PDF and Image Sequence at the same time." << std::endl;
-                return 1;
-            }
-            if (!fs::is_directory(dir)) {
-                std::cerr << "<!> Error: directory path dosen't exist. Try again." << std::endl;
-                return 1;
-            }
-            if (dir[dir.length() - 1] != '/') {
-                dir.push_back('/');
-            }
-            img_seq_dir = dir;
         } else if (arg == "-f") {
             i++;
             fps = std::stof(argv[i]);
@@ -79,7 +75,7 @@ int main(int argc, char **argv) {
         } else if (arg == "--format") {
             i++;
             vid_fmt = argv[i];
-            if (vid_fmt != "MP4" && vid_fmt != "AVI" && vid_fmt != "MOV") {
+            if (vid_fmt != "MP4" && vid_fmt != "AVI" && vid_fmt != "MKV" && vid_fmt != "MOV") {
                 std::cerr << "<!> Error: Video format not currently supported." << std::endl;
                 return 1;
             }
@@ -192,14 +188,10 @@ int main(int argc, char **argv) {
         make_frames_dir(frames_dir);
 
         if (style == Style::SCROLL) {
-            std::cout << "1" << std::endl;
             scale_images_to_width(images, vp.width);
-            std::cout << "1" << std::endl;
             cv::Mat long_img = get_long_image(images, vp);
-            std::cout << "1" << std::endl;
             std::cout << "Generating video frames..." << std::endl;
             generate_scroll_frames(frames_dir, images.size(), long_img, vp);
-            std::cout << "1" << std::endl;
         } else if (style == Style::SEQUENCE) {
             scale_images_to_fit(images, vp);
             std::cout << "Generating video frames..." << std::endl;

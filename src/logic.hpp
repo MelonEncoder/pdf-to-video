@@ -27,7 +27,6 @@ string get_frame_name(int index);
 string get_pdf_dir(string pdf_path);
 string get_pdf_name(string pdf_path);
 string get_scaled_dir(string img_seq_dir);
-string get_page_name(int index, int pages);
 cv::Mat get_long_image(vector<cv::Mat> &imgs, struct VP &vp);
 vector<cv::Mat> get_images(string dir);
 vector<cv::Mat> get_images_new(poppler::document *pdf, Style style, VP &vp);

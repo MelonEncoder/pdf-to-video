@@ -133,12 +133,13 @@ void generate_video(string frames_dir, string output, struct VP &vp) {
 }
 
 void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, struct VP &vp) {
+    int type = long_image.type();
     int pixels_translated = (double)long_image.rows / (vp.fps * vp.spp * pages);
     if (pixels_translated == 0) {
         pixels_translated = 1;
     }
     int height = long_image.rows - vp.height; // - vp.rows prevents out of bounds error with cv::Rect roi
-    cv::Mat tmp_img(vp.height, vp.width, CV_8UC4);
+    cv::Mat tmp_img(vp.height, vp.width, type);
 
     std::cout << "Pixels per frame: " << pixels_translated << std::endl;
 
@@ -152,10 +153,11 @@ void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, st
 
 void generate_sequence_frames(string frames_dir, vector<cv::Mat> imgs, struct VP &vp) {
     int count = 0;
+    int type = imgs[0].type();
     cv::Mat vp_img;
 
     for (size_t i = 0; i < imgs.size(); i ++) {
-        vp_img = cv::Mat(vp.height, vp.width, CV_8UC4, cv::Scalar(0, 0, 0));
+        vp_img = cv::Mat(vp.height, vp.width, type, cv::Scalar(0, 0, 0));
         int x = 0;
         int y = 0;
 
@@ -388,50 +390,6 @@ string get_frame_name(int index) {
         return "0" + std::to_string(index);
     } else if (index < 1000000) {
         return std::to_string(index);
-    }
-    return "z";
-}
-
-// returns numerical name as string no file extension
-string get_page_name(int index, int pages) {
-    if (pages < 10) {
-        return std::to_string(index);
-    } else if (pages < 100) {
-        if (index < 10) {
-            return "0" + std::to_string(index);
-        } else {
-            return std::to_string(index);
-        }
-    } else if (pages < 1000) {
-        if (index < 10) {
-            return "00" + std::to_string(index);
-        } else if (index < 100) {
-            return "0" + std::to_string(index);
-        } else {
-            return std::to_string(index);
-        }
-    } else if (pages < 10000) {
-        if (index < 10) {
-            return "000" + std::to_string(index);
-        } else if (index < 100) {
-            return "00" + std::to_string(index);
-        } else if (index < 1000) {
-            return "0" + std::to_string(index);
-        } else {
-            return std::to_string(index);
-        }
-    } else {
-        if (index < 10) {
-            return "0000" + std::to_string(index);
-        } else if (index < 100) {
-            return "000" + std::to_string(index);
-        } else if (index < 1000) {
-            return "00" + std::to_string(index);
-        } else if (index < 10000) {
-            return "0" + std::to_string(index);
-        } else if (index < 100000) {
-            return std::to_string(index);
-        }
     }
     return "z";
 }

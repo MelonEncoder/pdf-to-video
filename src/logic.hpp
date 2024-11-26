@@ -13,11 +13,8 @@
 using std::string;
 using std::vector;
 
-// void pdf_loading_test();
-
-void scale_images_to_width(vector<cv::Mat> &images, int dst_width);
-void scale_images_to_height(vector<cv::Mat> &images, int dst_height);
-void scale_images_to_fit(vector<cv::Mat> &images, struct VP &vp);
+void scale_image_to_width(cv::Mat &img, int dst_width);
+void scale_image_to_fit(cv::Mat& img, struct VP &vp);
 
 double get_scaled_dpi_from_width(poppler::page *page, int width); // dpi fits page to vp width
 double get_scaled_dpi(poppler::page *page, struct VP &vp); // dpi fits page in viewport
@@ -26,12 +23,12 @@ string get_frames_dir(string pdf_dir);
 string get_frame_name(int index);
 string get_scaled_dir(string img_seq_dir);
 cv::Mat get_long_image(vector<cv::Mat> &imgs, struct VP &vp);
-vector<cv::Mat> get_images(string dir);
-vector<cv::Mat> get_images_new(poppler::document *pdf, Style style, VP &vp);
+std::map<int, string> get_image_sequence_map(string dir);
+vector<cv::Mat> get_images(std::map<int, string> img_map, Style style, struct VP &vp);
+vector<cv::Mat> get_images(poppler::document *pdf, Style style, struct VP &vp);
 
 void make_frames_dir(string frames_dir);
 void make_scaled_dir(string scaled_dir);
-void make_pdf_dir(string pdf_dir);
 
 string format_path(string str);
 

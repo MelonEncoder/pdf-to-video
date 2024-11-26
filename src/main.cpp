@@ -138,7 +138,7 @@ int main(int argc, char **argv) {
         poppler::document *pdf = poppler::document::load_from_file(pdf_path);
         string frames_dir = get_frames_dir(pdf_path);
 
-        // sets viewport's with/height to full res of first pdf page
+        // sets viewport's resolution to full res of first pdf page
         poppler::rectf rect = pdf->create_page(0)->page_rect(poppler::media_box);
         if (width == -1) {
             vp.width = rect.width();
@@ -148,7 +148,7 @@ int main(int argc, char **argv) {
         }
 
         std::cout << "Loading pdf pages..." << std::endl;
-        std::vector<cv::Mat> images = get_images_new(pdf, style, vp);
+        std::vector<cv::Mat> images = get_images(pdf, style, vp);
 
         make_frames_dir(frames_dir);
 
@@ -175,25 +175,28 @@ int main(int argc, char **argv) {
     // converting image sequence to video
     if (img_seq_dir != "") {
         string frames_dir = get_frames_dir(img_seq_dir);
-        std::cout << "Loading images..." << std::endl;
-        vector<cv::Mat> images = get_images(img_seq_dir);
+        std::map<int, string> img_map = get_image_sequence_map(img_seq_dir);
 
+        // sets viewport res to resolution of img
+        cv::Mat img = cv::imread(img_map[-1]);
         if (width == -1) {
-            vp.width = images[0].cols;
+            vp.width = img.cols % 2 == 0 ? img.cols : img.cols + 1;
         }
         if (height == -1) {
-            vp.height = images[0].rows;
+            vp.height = img.rows % 2 == 0 ? img.rows : img.rows + 1;
         }
+        img_map.erase(-1);
+
+        std::cout << "Loading images..." << std::endl;
+        vector<cv::Mat> images = get_images(img_map, style, vp);
 
         make_frames_dir(frames_dir);
 
         if (style == Style::SCROLL) {
-            scale_images_to_width(images, vp.width);
             cv::Mat long_img = get_long_image(images, vp);
             std::cout << "Generating video frames..." << std::endl;
             generate_scroll_frames(frames_dir, images.size(), long_img, vp);
         } else if (style == Style::SEQUENCE) {
-            scale_images_to_fit(images, vp);
             std::cout << "Generating video frames..." << std::endl;
             generate_sequence_frames(frames_dir, images, vp);
         }

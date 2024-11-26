@@ -25,54 +25,36 @@ using std::string;
 using std::vector;
 namespace fs = std::filesystem;
 
-void scale_images_to_width(vector<cv::Mat> &images, int dst_width) {
-    for (int i = 0; i < (int)images.size(); i++) {
-        cv::Mat new_img;
-        double scale = (double)dst_width / (double)images[i].cols;
-        cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
-        images[i] = new_img;
-    }
+void scale_image_to_width(cv::Mat &img, int dst_width) {
+    double scale = (double)dst_width / (double)img.cols;
+    cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_LINEAR);
 }
 
-void scale_images_to_height(vector<cv::Mat> &images, int dst_height) {
-    for (int i = 0; i < (int)images.size(); i++) {
-        cv::Mat new_img;
-        double scale = (double)dst_height / (double)images[i].cols;
-        cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
-        images[i] = new_img;
+void scale_image_to_fit(cv::Mat &img, struct VP &vp) {
+    double scale_w;
+    double scale_h;
+    double scale = 1.0;
+
+    if (img.cols > vp.width && img.cols > vp.height) {
+        scale_w = (double)vp.width / (double)img.cols;
+        scale_h = (double)vp.height / (double)img.rows;
+        scale = std::min(scale_w, scale_h);
     }
-}
-
-void scale_images_to_fit(vector<cv::Mat> &images, struct VP &vp) {
-    for (int i = 0; i < (int)images.size(); i++) {
-        cv::Mat img(images[i]);
-        double scale_w;
-        double scale_h;
-        double scale = 1.0;
-
-        if (img.cols > vp.width && img.cols > vp.height) {
-            scale_w = (double)vp.width / (double)images[i].cols;
-            scale_h = (double)vp.height / (double)images[i].rows;
-            scale = std::min(scale_w, scale_h);
-        }
-        if (img.cols < vp.width && img.rows < vp.height) {
-            scale_w = (double)vp.width / (double)images[i].cols;
-            scale_h = (double)vp.height / (double)images[i].rows;
-            scale = std::min(scale_w, scale_h);
-        }
-        if (img.cols > vp.width && img.rows <= vp.height) {
-            scale_w = (double)vp.width / (double)img.cols;
-            scale = scale_w;
-        }
-        if (img.cols <= vp.width && img.rows > vp.height) {
-            scale_h = (double)vp.height / (double)img.rows;
-            scale = scale_h;
-        }
-
-        cv::Mat new_img;
-        cv::resize(images[i], new_img, cv::Size(), scale, scale, cv::INTER_LINEAR);
-        images[i] = new_img;
+    if (img.cols < vp.width && img.rows < vp.height) {
+        scale_w = (double)vp.width / (double)img.cols;
+        scale_h = (double)vp.height / (double)img.rows;
+        scale = std::min(scale_w, scale_h);
     }
+    if (img.cols > vp.width && img.rows <= vp.height) {
+        scale_w = (double)vp.width / (double)img.cols;
+        scale = scale_w;
+    }
+    if (img.cols <= vp.width && img.rows > vp.height) {
+        scale_h = (double)vp.height / (double)img.rows;
+        scale = scale_h;
+    }
+
+    cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_LINEAR);
 }
 
 void make_frames_dir(string frames_dir) {
@@ -82,15 +64,6 @@ void make_frames_dir(string frames_dir) {
     else {
         fs::create_directory(frames_dir);
         std::cout << "Created frames directory." << std::endl;
-    }
-}
-
-void make_pdf_dir(string pdf_dir) {
-    if (!fs::exists(pdf_dir)) {
-        fs::create_directory(pdf_dir);
-        std::cout << "Created PDF directory." << std::endl;
-    } else {
-        std::cout << "PDF directory already exists." << std::endl;
     }
 }
 
@@ -134,7 +107,7 @@ void generate_video(string frames_dir, string output, struct VP &vp) {
     std::cout << "Generating video..." << std::endl;
     std::system(cmd.c_str());
 
-    std::cout << "Output path: " << output << std::endl;
+    std::cout << "Output path: " << new_out << std::endl;
 }
 
 void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, struct VP &vp) {
@@ -186,7 +159,7 @@ void generate_sequence_frames(string frames_dir, vector<cv::Mat> imgs, struct VP
 
 string get_frames_dir(string path) {
     std::srand(std::time(0));
-    int rand_num = std::rand() % 999999 + 100000;
+    int rand_num = std::rand() % 899999 + 100000;
     string result;
     string sub_dir;
 
@@ -203,15 +176,14 @@ string get_frames_dir(string path) {
     return result;
 }
 
-vector<cv::Mat> get_images(string dir) {
-    vector<cv::Mat> images;
+std::map<int, string> get_image_sequence_map(string dir) {
+    int small = 99;
     std::map<int, string> image_map;
     // creates hash-map of valid image paths in numerical order
     for (const auto &entry : fs::directory_iterator(dir)) {
-        string path;
-        int index;
         if (!fs::is_directory(entry)) {
-            path = entry.path().string();
+            int index;
+            string path = entry.path().string();
             string name = entry.path().filename().string();
             try {
                 index = std::stoi(name.substr(0, name.length() - name.find_last_of('.')));
@@ -220,14 +192,30 @@ vector<cv::Mat> get_images(string dir) {
             } catch (const std::out_of_range& e) {
                 std::cerr << "<!> Out of Range: geting int value from image name, get_images()." << std::endl;
             }
+            if (index < small) {
+                small = index;
+            }
             image_map.insert(std::make_pair(index, path));
         }
     }
-    // reads images in numerical order
-    for (size_t i = 0; i < image_map.size(); i++) {
-        if (image_map[i] == "") continue;
+    // used to define vp res when -1 inputed as value
+    image_map.insert(std::make_pair(-1, image_map[small]));
+    return image_map;
+}
 
-        cv::Mat mat = cv::imread(image_map[i]);
+vector<cv::Mat> get_images(std::map<int, string> img_map, Style style, struct VP &vp) {
+    vector<cv::Mat> images;
+    // reads images in numerical order
+    for (size_t i = 0; i < img_map.size(); i++) {
+        if (img_map[i] == "") continue;
+
+        cv::Mat mat = cv::imread(img_map[i]);
+
+        if (style == Style::SCROLL) {
+            scale_image_to_width(mat, vp.width);
+        } else if (style == Style::SEQUENCE) {
+            scale_image_to_fit(mat, vp);
+        }
 
         // makes dimentions of the image divisible by 2.
         // ffmpeg will get upset if otherwise.
@@ -243,7 +231,7 @@ vector<cv::Mat> get_images(string dir) {
     return images;
 }
 
-vector<cv::Mat> get_images_new(poppler::document *pdf, Style style, VP &vp) {
+vector<cv::Mat> get_images(poppler::document *pdf, Style style, VP &vp) {
     int pages = pdf->pages();
     auto renderer = poppler::page_renderer();
     vector<cv::Mat> images = {};

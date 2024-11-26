@@ -156,7 +156,6 @@ int main(int argc, char **argv) {
 
         make_frames_dir(frames_dir);
 
-
         if (style == Style::SCROLL) {
             cv::Mat long_img = get_long_image(images, vp);
             std::cout << "Generating video frames..." << std::endl;
@@ -192,12 +191,15 @@ int main(int argc, char **argv) {
 
         make_frames_dir(frames_dir);
 
-        int img_count = images.size();
         if (style == Style::SCROLL) {
+            std::cout << "1" << std::endl;
             scale_images_to_width(images, vp.width);
+            std::cout << "1" << std::endl;
             cv::Mat long_img = get_long_image(images, vp);
+            std::cout << "1" << std::endl;
             std::cout << "Generating video frames..." << std::endl;
-            generate_scroll_frames(frames_dir, img_count, long_img, vp);
+            generate_scroll_frames(frames_dir, images.size(), long_img, vp);
+            std::cout << "1" << std::endl;
         } else if (style == Style::SEQUENCE) {
             scale_images_to_fit(images, vp);
             std::cout << "Generating video frames..." << std::endl;

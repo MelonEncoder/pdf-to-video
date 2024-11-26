@@ -138,7 +138,7 @@ void generate_scroll_frames(string frames_dir, int pages, cv::Mat long_image, st
         pixels_translated = 1;
     }
     int height = long_image.rows - vp.height; // - vp.rows prevents out of bounds error with cv::Rect roi
-    cv::Mat tmp_img(vp.height, vp.width, CV_8UC3);
+    cv::Mat tmp_img(vp.height, vp.width, CV_8UC4);
 
     std::cout << "Pixels per frame: " << pixels_translated << std::endl;
 
@@ -243,7 +243,7 @@ vector<cv::Mat> get_images_new(poppler::document *pdf, Style style, VP &vp) {
 
     // required to copy pdf data to vector
     for (int i = 0; i < pages; i++) {
-        images.emplace_back(cv::Mat(100, 100, CV_8UC3, cv::Scalar(100, 210, 70)));
+        images.emplace_back(cv::Mat(100, 100, CV_8UC1, cv::Scalar(100, 210, 70)));
     }
 
     for (int i = 0; i < pages; i++) {
@@ -301,6 +301,7 @@ vector<cv::Mat> get_images_new(poppler::document *pdf, Style style, VP &vp) {
 
 cv::Mat get_long_image(vector<cv::Mat> &imgs, struct VP &vp) {
     int height = 0;
+    int type = imgs[0].type();
     cv::Mat long_image;
 
     // stores exported pdf pages as images in vector.
@@ -310,8 +311,8 @@ cv::Mat get_long_image(vector<cv::Mat> &imgs, struct VP &vp) {
     // adds white space before and after content.
     height += vp.height * 2;
 
-    // images that will contain all contents of pdf
-    long_image = cv::Mat(height, vp.width, CV_8UC4);
+    // images that will contain all contents of pdf (like a long comic strip)
+    long_image = cv::Mat(height, vp.width, type);
 
     // sequentually adds all pages of pdf in order to long_image.
     // ROI -> Region of Interest
@@ -369,13 +370,9 @@ string get_pdf_dir(string pdf_path) {
     return pdf_dir;
 }
 
-
-
 string get_pdf_name(string pdf_path) {
     return pdf_path.substr(pdf_path.find_last_of("/") + 1, pdf_path.length() - 7);
 }
-
-
 
 // returns numerical name as string no file extension
 string get_frame_name(int index) {

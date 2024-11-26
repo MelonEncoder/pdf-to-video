@@ -105,8 +105,13 @@ string format_path(string str) {
 }
 
 void generate_video(string frames_dir, string output, struct VP &vp) {
-    while (fs::exists(output)) {
-        output.insert((output.length() - 4), 1, '+');
+    int count = 1;
+    string new_out = output;
+    while (fs::exists(new_out)) {
+        string val = "_" + std::to_string(count);
+        new_out = output;
+        new_out.insert((new_out.length() - 4), val);
+        count++;
     }
 
     vector<string> cmd_args = {
@@ -116,7 +121,7 @@ void generate_video(string frames_dir, string output, struct VP &vp) {
         frames_dir + "%06d.jpg",
         "-s",
         std::to_string(vp.width) + "x" + std::to_string(vp.height),
-        output
+        new_out
     };
 
     string cmd = "ffmpeg";
@@ -367,15 +372,6 @@ double get_scaled_dpi(poppler::page *page, struct VP &vp) {
     return DEFAULT_DPI;
 }
 
-string get_pdf_dir(string pdf_path) {
-    string pdf_dir = pdf_path.substr(0, pdf_path.length() - 4) + "_" + pdf_path.substr(pdf_path.length() - 3) + "/";
-    return pdf_dir;
-}
-
-string get_pdf_name(string pdf_path) {
-    return pdf_path.substr(pdf_path.find_last_of("/") + 1, pdf_path.length() - 7);
-}
-
 // returns numerical name as string no file extension
 string get_frame_name(int index) {
     if (index < 10) {
@@ -391,7 +387,7 @@ string get_frame_name(int index) {
     } else if (index < 1000000) {
         return std::to_string(index);
     }
-    return "z";
+    return "1000001";
 }
 
 bool delete_dir(string dir) {

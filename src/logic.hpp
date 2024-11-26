@@ -24,8 +24,6 @@ double get_scaled_dpi(poppler::page *page, struct VP &vp); // dpi fits page in v
 
 string get_frames_dir(string pdf_dir);
 string get_frame_name(int index);
-string get_pdf_dir(string pdf_path);
-string get_pdf_name(string pdf_path);
 string get_scaled_dir(string img_seq_dir);
 cv::Mat get_long_image(vector<cv::Mat> &imgs, struct VP &vp);
 vector<cv::Mat> get_images(string dir);

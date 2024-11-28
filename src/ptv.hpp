@@ -8,15 +8,9 @@ ptv [options...]\n\
 Help Options: \n\
    -h, --help                             :  show help options.\n\
 Application Options: \n\
-<<<<<<< HEAD
-   [pdf_path]                             :  PDF file path. /home/usr/example.pdf\n\
-   [img_sequence_dir]                     :  image sequence directory. /home/usr/example_seq/\n\
-   -r <int> <int>                         :  set output resolution. use -1 to not scale, default: 1280 720 \n\
-=======
    [pdf_path...]                          :  PDF file path. /home/usr/example.pdf\n\
    [img_sequence_dir...]                  :  image sequence directory. /home/usr/example_seq/\n\
    -r <int> <int>                         :  set output resolution. use -1 to keep scale, default: 1920 1080 \n\
->>>>>>> multi-select
    -f <float>                             :  frames per second.\n\
    -s <float>                             :  seconds per page.\n\
    --format AVI,MP4,MKV,MOV               :  select encoding file format.\n\

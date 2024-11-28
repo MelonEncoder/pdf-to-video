@@ -23,9 +23,9 @@ string get_frames_dir(string pdf_dir);
 string get_frame_name(int index);
 string get_scaled_dir(string img_seq_dir);
 cv::Mat get_long_image(vector<cv::Mat> &imgs, struct VP &vp);
-std::map<int, string> get_image_sequence_map(string dir);
+std::map<int, string> get_image_sequence_map(vector<string> dirs);
 vector<cv::Mat> get_images(std::map<int, string> img_map, Style style, struct VP &vp);
-vector<cv::Mat> get_images(poppler::document *pdf, Style style, struct VP &vp);
+vector<cv::Mat> get_images(vector<string> pdf_paths, Style style, struct VP &vp);
 
 void make_frames_dir(string frames_dir);
 void make_scaled_dir(string scaled_dir);

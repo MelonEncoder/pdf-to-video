@@ -1,16 +1,8 @@
 #include "poppler.hpp"
 #include "opencv.hpp"
 #include "ptv.hpp"
-#include <cctype>
 #include <filesystem>
-#include <libavformat/avformat.h>
 #include <opencv2/imgcodecs.hpp>
-#include "cpp/poppler-rectangle.h"
-#include "poppler.hpp"
-#include "opencv.hpp"
-#include "ptv.hpp"
-#include <algorithm>
-#include <cstddef>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/types.hpp>
@@ -20,22 +12,18 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <opencv2/videoio.hpp>
-#include <stdexcept>
 #include <string>
 #include <filesystem>
-#include <utility>
 #include <vector>
-#include <cstdlib>
-#include <cstdio>
-#include <ctime>
 
 using std::string;
 using std::vector;
 namespace fs = std::filesystem;
 
-// ===================================================
-//
-// =====================================================
+// ======= //
+// Headers //
+// ======= //
+
 void scale_image_to_width(cv::Mat &img, int dst_width);
 void scale_image_to_fit(cv::Mat& img, struct VP &vp);
 
@@ -47,18 +35,13 @@ std::map<int, string> get_image_sequence_map(vector<string> dirs);
 vector<cv::Mat> get_images(std::map<int, string> img_map, Style style, struct VP &vp);
 vector<cv::Mat> get_images(vector<string> pdf_paths, Style style, struct VP &vp);
 
-string format_path(string str);
-
 void generate_video(string frames_dir, string output, struct VP &vp);
 void generate_scroll_frames(cv::VideoWriter &vid, int pages, cv::Mat &long_image, struct VP &vp);
 void generate_sequence_frames(cv::VideoWriter &vid, vector<cv::Mat> &imgs, struct VP &vp);
 
-
-void test();
-// ===================================================
-//
-// =====================================================
-
+// ============= //
+// Main Function //
+// ============= //
 
 int main(int argc, char **argv) {
     Style style = Style::SEQUENCE;
@@ -266,6 +249,10 @@ int main(int argc, char **argv) {
     return 0;
 }
 
+// ========= //
+// Functions //
+// ========= //
+
 void scale_image_to_width(cv::Mat &img, int dst_width) {
     double scale = (double)dst_width / (double)img.cols;
     cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_LINEAR);
@@ -294,16 +281,6 @@ void scale_image_to_fit(cv::Mat &img, struct VP &vp) {
         scale = scale_h;
     }
     cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_LINEAR);
-}
-
-string format_path(string str) {
-    string bad_chars = " ()&-<>";
-    for (int i = 0; i < (int)str.length(); i++) {
-        if ((int)bad_chars.find(str[i]) > -1) {
-            str[i] = '_';
-        }
-    }
-    return str;
 }
 
 void generate_scroll_frames(cv::VideoWriter &vid, int pages, cv::Mat &long_image, struct VP &vp) {
@@ -364,7 +341,7 @@ std::map<int, string> get_image_sequence_map(vector<string> dirs) {
                 try {
                     index = std::stoi(name.substr(0, name.length() - name.find_last_of('.'))) + count;
                 } catch (const std::invalid_argument& e) {
-                    std::cerr << "<!> Warning: " << name << " contains no int. Skipped." << std::endl;
+                    std::cerr << "<!> Warning: " << name << " skipped. Number not found." << std::endl;
                     continue;
                 } catch (const std::out_of_range& e) {
                     std::cerr << "<!> Out of Range: geting int value from image name, get_images()." << std::endl;
@@ -541,37 +518,4 @@ double get_scaled_dpi(poppler::page *page, struct VP &vp) {
         return dpi_h;
     }
     return DEFAULT_DPI;
-}
-
-void test() {
-    vector<cv::Mat> mats = {};
-
-    string dir = "../test/test_seq/";
-    if (fs::is_directory(dir)) {
-        for (const auto &entry : fs::directory_iterator(dir)) {
-            if (!fs::is_directory(entry)) {
-                cv::Mat mat = cv::imread(entry.path().string());
-                mats.push_back(mat);
-            }
-        }
-    }
-
-    cv::Size frame_size = mats[0].size();
-
-    for (auto &m: mats) {
-        if (m.size() != frame_size) {
-            std::cerr << "bad frame size" << std::endl;
-        }
-    }
-
-    cv::VideoWriter video("../test/out1.mkv", cv::VideoWriter::fourcc('H', '2', '6', '4'), 1, frame_size, true);
-
-    for (const cv::Mat &m : mats) {
-        video.write(m);
-    }
-
-    video.release();
-    for (auto &m: mats) {
-        m.release();
-    }
 }

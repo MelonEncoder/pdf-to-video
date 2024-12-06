@@ -2,7 +2,7 @@ project('pti_v2', 'cpp')
 
 output = 'test.out'
 
-srcs = ['src/main.cpp', 'src/logic.cpp']
+srcs = ['src/main.cpp']
 
 include_dirs = [
     '/usr/include/poppler',
@@ -16,6 +16,11 @@ linked_libs = [
     '-lopencv_imgproc',
     '-lopencv_highgui',
     '-lopencv_imgcodecs',
+    '-lopencv_videoio',
+]
+
+args = [
+    '-DWITH_FFMPEG=ON',
 ]
 
 executable(
@@ -23,4 +28,5 @@ executable(
     sources: srcs,
     include_directories: include_dirs,
     link_args: linked_libs,
+    cpp_args: args,
 )

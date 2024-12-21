@@ -12,7 +12,7 @@ Application Options: \n\
    -f <float>                             :  frames per second.\n\
    -s <float>                             :  seconds per frame.\n\
    -d <float>                             :  duration in seconds. *NOTE: overides -s (or seconds per frame)*\n\
-   -o [output_path]                       :  currently only support .mkv files, leave blank for auto\n\
+   -o [output_path]                       :  currently only support .mp4 files, leave blank for auto\n\
    --scroll                               :  scrolls content (vertically) instead of slideshow.\n\
 "
 #define DEFAULT_DPI 72.0

@@ -29,8 +29,8 @@ namespace fs = std::filesystem;
 void scale_image_to_width(cv::Mat &img, int dst_width);
 void scale_image_to_fit(cv::Mat& img, struct VP &vp);
 
-double get_scaled_dpi_from_width(poppler::page *page, int width); // dpi fits page to vp width
-double get_scaled_dpi_to_fit(poppler::page *page, struct VP &vp); // dpi fits page in viewport
+float get_scaled_dpi_from_width(poppler::page *page, int width); // dpi fits page to vp width
+float get_scaled_dpi_to_fit(poppler::page *page, struct VP &vp); // dpi fits page in viewport
 
 std::map<int, string> get_image_sequence_map(vector<string> seq_dirs);
 vector<cv::Mat> get_images(std::map<int, string> img_map, Style style, struct VP &vp);
@@ -47,11 +47,13 @@ int main(int argc, char **argv) {
     Style style = Style::SEQUENCE;
     bool is_pdf = false;
     bool is_seq = false;
-    double width = 1280.0;
-    double height = 720.0;
-    double fps = 1.0;
-    double spp = 1.0;
+    float width = 1280.0;
+    float height = 720.0;
+    float fps = 1.0;
+    float spp = 1.0;
+    float duration = -1.0;
     string output = "";
+    string format = ".mp4";
     vector<string> pdf_paths = {};
     vector<string> seq_dirs = {};
 
@@ -108,11 +110,14 @@ int main(int argc, char **argv) {
         } else if (arg == "-s") {
             i++;
             spp = std::stof(argv[i]);
+        } else if (arg == "-d") {
+            i++;
+            duration = std::stof(argv[i]);
         } else if (arg == "-o") {
             i++;
             arg = argv[i];
-            if ((int)arg.find(".mkv") == -1) {
-                std::cerr << "<!> Error: output file extension must be .mkv" << std::endl;
+            if ((int)arg.find(format) == -1) {
+                std::cerr << "<!> Error: output file extension must be " + format << std::endl;
                 return 1;
             }
             if ((int)arg.find('/') == -1) {
@@ -146,7 +151,7 @@ int main(int argc, char **argv) {
 
         if (output == "") {
             string path = pdf_paths[0];
-            output = path.substr(0, path.find_last_of('.')) + ".mkv";
+            output = path.substr(0, path.find_last_of('.')) + format;
         }
     }
     if (is_seq) {
@@ -161,13 +166,17 @@ int main(int argc, char **argv) {
 
         if (output == "") {
             string path = seq_dirs[0];
-            output = path.substr(0, path.find_last_of('/')) + ".mkv";
+            output = path.substr(0, path.find_last_of('/')) + format;
         }
     }
     std::cout << "Output: " << output << std::endl;
     std::cout << "Resolution: " << width << "x" << height << std::endl;
-    std::cout << "Duration: " << spp << "s" << std::endl;
     std::cout << "FPS: " << fps << std::endl;
+    if (duration != -1.0 && style == Style::SCROLL) {
+        std::cout << "Duration: " << duration << "s" << std::endl;
+    } else if (style == Style::SCROLL) {
+        std::cout << "SPP: " << spp << "s" << std::endl;
+    }
     if (style == Style::SCROLL) {
         std::cout << "Style: SCROLL" << std::endl;
     } else if (style == Style::SEQUENCE) {
@@ -189,6 +198,7 @@ int main(int argc, char **argv) {
         height,
         fps,
         spp,
+        duration,
     };
 
     // Application Logic
@@ -225,7 +235,7 @@ int main(int argc, char **argv) {
 
     // inits video renderer
     cv::Size frame_size(vp.width, vp.height);
-    cv::VideoWriter video(output, cv::CAP_FFMPEG, cv::VideoWriter::fourcc('H', '2', '6', '4'), vp.fps, frame_size, true);
+    cv::VideoWriter video = cv::VideoWriter(output, cv::CAP_FFMPEG, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), vp.fps, frame_size, true);
 
     // generates frames
     if (style == Style::SCROLL) {
@@ -249,65 +259,65 @@ int main(int argc, char **argv) {
 // ========= //
 
 void scale_image_to_width(cv::Mat &img, int dst_width) {
-    double scale = (double)dst_width / (double)img.cols;
+    float scale = (float)dst_width / (float)img.cols;
     cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_LINEAR);
 }
 
 void scale_image_to_fit(cv::Mat &img, struct VP &vp) {
-    double scale_w;
-    double scale_h;
-    double scale = 1.0;
+    float scale_w;
+    float scale_h;
+    float scale = 1.0;
     if (img.cols > vp.width && img.cols > vp.height) {
-        scale_w = (double)vp.width / (double)img.cols;
-        scale_h = (double)vp.height / (double)img.rows;
+        scale_w = (float)vp.width / (float)img.cols;
+        scale_h = (float)vp.height / (float)img.rows;
         scale = std::min(scale_w, scale_h);
     }
     if (img.cols < vp.width && img.rows < vp.height) {
-        scale_w = (double)vp.width / (double)img.cols;
-        scale_h = (double)vp.height / (double)img.rows;
+        scale_w = (float)vp.width / (float)img.cols;
+        scale_h = (float)vp.height / (float)img.rows;
         scale = std::min(scale_w, scale_h);
     }
     if (img.cols > vp.width && img.rows <= vp.height) {
-        scale_w = (double)vp.width / (double)img.cols;
+        scale_w = (float)vp.width / (float)img.cols;
         scale = scale_w;
     }
     if (img.cols <= vp.width && img.rows > vp.height) {
-        scale_h = (double)vp.height / (double)img.rows;
+        scale_h = (float)vp.height / (float)img.rows;
         scale = scale_h;
     }
     cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_LINEAR);
 }
 
 // returns dpi to scale page to viewport width
-double get_scaled_dpi_from_width(poppler::page *page, int width) {
+float get_scaled_dpi_from_width(poppler::page *page, int width) {
     auto rect = page->page_rect(poppler::media_box);
     if (rect.width() == width) {
         return DEFAULT_DPI;
     }
-    return ((double)width * DEFAULT_DPI) / (double)rect.width();
+    return ((float)width * DEFAULT_DPI) / (float)rect.width();
 }
 
 // returns dpi that will scale the pdf page to fit the viewport dimentions
-double get_scaled_dpi_to_fit(poppler::page *page, struct VP &vp) {
-    double dpi_w;
-    double dpi_h;
+float get_scaled_dpi_to_fit(poppler::page *page, struct VP &vp) {
+    float dpi_w;
+    float dpi_h;
     poppler::rectf rect = page->page_rect(poppler::media_box);
     if (rect.width() > vp.width && rect.height() > vp.height) {
-        dpi_w = ((double)vp.width * DEFAULT_DPI) / rect.width();
-        dpi_h = ((double)vp.height * DEFAULT_DPI) / rect.height();
+        dpi_w = ((float)vp.width * DEFAULT_DPI) / rect.width();
+        dpi_h = ((float)vp.height * DEFAULT_DPI) / rect.height();
         return std::min(dpi_w, dpi_h);
     }
     if (rect.width() < vp.width && rect.height() < vp.height) {
-        dpi_w = ((double)vp.width * DEFAULT_DPI) / rect.width();
-        dpi_h = ((double)vp.height * DEFAULT_DPI) / rect.height();
+        dpi_w = ((float)vp.width * DEFAULT_DPI) / rect.width();
+        dpi_h = ((float)vp.height * DEFAULT_DPI) / rect.height();
         return std::min(dpi_w, dpi_h);
     }
     if (rect.width() > vp.width && rect.height() <= vp.height) {
-        dpi_w = ((double)vp.width * DEFAULT_DPI) / rect.width();
+        dpi_w = ((float)vp.width * DEFAULT_DPI) / rect.width();
         return dpi_w;
     }
     if (rect.width() <= vp.width && rect.height() > vp.height) {
-        dpi_h = ((double)vp.height * DEFAULT_DPI) / rect.height();
+        dpi_h = ((float)vp.height * DEFAULT_DPI) / rect.height();
         return dpi_h;
     }
     return DEFAULT_DPI;
@@ -397,7 +407,7 @@ vector<cv::Mat> get_images(vector<string> pdf_paths, Style style, VP &vp) {
 
         // gets pages of individual pdf files
         for (int pg = 0; curr_index < total_pages; curr_index++, pg++) {
-            double dpi = DEFAULT_DPI;
+            float dpi = DEFAULT_DPI;
             poppler::page *page = pdf->create_page(pg);
 
             // scales pages to correctly fit inside displayport.
@@ -453,7 +463,7 @@ vector<cv::Mat> get_images(vector<string> pdf_paths, Style style, VP &vp) {
 
 // scroll effect
 void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, struct VP &vp) {
-    double px_per_frame = 0;
+    float px_per_frame = 0;
     cv::Mat long_img(vp.height + imgs[0].rows, vp.width, CV_8UC3, cv::Scalar(0, 0, 0));
     cv::Mat vp_img(vp.height, vp.width, CV_8UC3, cv::Scalar(0, 0, 0));
     cv::Rect2d roi(0, vp.height, imgs[0].cols, imgs[0].rows);
@@ -463,26 +473,30 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, str
     for (size_t i = 0; i < imgs.size(); i++) {
         height += imgs[i].rows;
     }
-    px_per_frame = (double)height / (vp.fps * vp.sec);
+    if (vp.duration != -1.0) {
+        px_per_frame = (float)height / (vp.fps * vp.duration);
+    } else {
+        px_per_frame = (float)height / (vp.fps * vp.spp * imgs.size());
+    }
     if (px_per_frame == 0.0) {
         px_per_frame = 0.5;
     }
     std::cout << "Pixels per frame: " << px_per_frame << std::endl;
 
     std::cout << "Generating video..." << std::endl;
-    double h = 0;
+    float h = 0;
     for (size_t i = 1; i < imgs.size(); i++) {
         std::cout << i << "/" << imgs.size() << std::endl;
         // generates and writes frames to video file
-            while (((double)long_img.rows - (h + vp.height)) > px_per_frame) {
+            while (((float)long_img.rows - (h + vp.height)) > px_per_frame) {
                 cv::Rect2d roi(0.0, h, vp.width, vp.height);
                 long_img(roi).copyTo(vp_img);
                 vid.write(vp_img);
                 h += px_per_frame;
             }
         // logic to readjust the translation of video frames
-        double unused_height = long_img.rows - (h + vp.height); // height not yet rendered in vp.
-        double new_long_h = vp.height + unused_height + imgs[i].rows;
+        float unused_height = long_img.rows - (h + vp.height); // height not yet rendered in vp.
+        float new_long_h = vp.height + unused_height + imgs[i].rows;
         cv::Mat new_long;
         if (imgs.size() - 2 == i) { // allows video to scroll to black at end
             new_long = cv::Mat(std::ceil(new_long_h) + vp.height + px_per_frame, vp.width, CV_8UC3, cv::Scalar(0, 0, 0));

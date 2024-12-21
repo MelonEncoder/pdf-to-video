@@ -10,7 +10,8 @@ Application Options: \n\
    [img_sequence_dirs...]                 :  image sequence directory. /home/usr/example_seq/\n\
    -r <int> <int>                         :  set output resolution. use -1 to keep scale, default: 1280 720 \n\
    -f <float>                             :  frames per second.\n\
-   -s <float>                             :  duration in seconds.\n\
+   -s <float>                             :  seconds per frame.\n\
+   -d <float>                             :  duration in seconds. *NOTE: overides -s (or seconds per frame)*\n\
    -o [output_path]                       :  currently only support .mkv files, leave blank for auto\n\
    --scroll                               :  scrolls content (vertically) instead of slideshow.\n\
 "
@@ -22,10 +23,11 @@ enum class Style {
 };
 
 struct VP {
-    double width;
-    double height;
-    double fps;
-    double sec;
+    float width;
+    float height;
+    float fps;
+    float spp;
+    float duration;
 };
 
 #endif

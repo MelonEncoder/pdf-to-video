@@ -1,19 +1,9 @@
-#include "poppler.hpp"
 #include "opencv.hpp"
+#include "poppler.hpp"
 #include "ptv.hpp"
 #include <cmath>
 #include <filesystem>
-#include <opencv2/core/persistence.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/core.hpp>
-#include <opencv2/core/hal/interface.h>
-#include <opencv2/core/types.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/opencv.hpp>
 #include <iostream>
-#include <opencv2/videoio.hpp>
 #include <string>
 #include <filesystem>
 #include <vector>
@@ -47,15 +37,17 @@ int main(int argc, char **argv) {
     Style style = Style::SEQUENCE;
     bool is_pdf = false;
     bool is_seq = false;
-    float width = 1280.0;
-    float height = 720.0;
-    float fps = 1.0;
-    float spp = 1.0;
-    float duration = -1.0;
     string output = "";
     string format = ".mp4";
     vector<string> pdf_paths = {};
     vector<string> seq_dirs = {};
+    struct VP vp = {
+        1280.0f, // width
+        720.0f, // height
+        1.0f, // fps
+        1.0f, // spp
+        -1.0f, // duration
+    };
 
     if (argc < 2) {
         std::cerr << HELP_TXT << std::endl;
@@ -68,7 +60,8 @@ int main(int argc, char **argv) {
         if (arg == "-h" || arg == "--help") {
             std::cout << HELP_TXT << std::endl;
             return 0;
-        } else if ((int)arg.find(".pdf") > -1) {
+        }
+        else if ((int)arg.find(".pdf") > -1) {
             if (is_seq) {
                 std::cerr << "<!> Error: Cannot convert Image Sequence and PDF at the same time." << std::endl;
                 return 1;
@@ -84,7 +77,8 @@ int main(int argc, char **argv) {
                 return 1;
             }
             pdf_paths.push_back(arg);
-        } else if ((int)arg.find('/') > -1) {
+        }
+        else if ((int)arg.find('/') > -1) {
             if (is_pdf) {
                 std::cerr << "<!> Error: Cannot convert PDF and Image Sequence at the same time." << std::endl;
                 return 1;
@@ -99,21 +93,26 @@ int main(int argc, char **argv) {
                 arg.push_back('/');
             }
             seq_dirs.push_back(arg);
-        } else if (arg == "-r") {
+        }
+        else if (arg == "-r") {
             i++;
-            width = std::stoi(argv[i]);
+            vp.width = std::stoi(argv[i]);
             i++;
-            height = std::stoi(argv[i]);
-        } else if (arg == "-f") {
+            vp.height = std::stoi(argv[i]);
+        }
+        else if (arg == "-f") {
             i++;
-            fps = std::stof(argv[i]);
-        } else if (arg == "-s") {
+            vp.fps = std::stof(argv[i]);
+        }
+        else if (arg == "-s") {
             i++;
-            spp = std::stof(argv[i]);
-        } else if (arg == "-d") {
+            vp.spp = std::stof(argv[i]);
+        }
+        else if (arg == "-d") {
             i++;
-            duration = std::stof(argv[i]);
-        } else if (arg == "-o") {
+            vp.duration = std::stof(argv[i]);
+        }
+        else if (arg == "-o") {
             i++;
             arg = argv[i];
             if ((int)arg.find(format) == -1) {
@@ -122,7 +121,8 @@ int main(int argc, char **argv) {
             }
             if ((int)arg.find('/') == -1) {
                 output = arg;
-            } else {
+            }
+            else {
                 string dir = arg.substr(0, arg.find_last_of('/') + 1);
                 if (!fs::exists(dir)) {
                     std::cout << "<!> Error: Output directory does not exists." << std::endl;
@@ -130,9 +130,11 @@ int main(int argc, char **argv) {
                 }
             }
             output = arg;
-        } else if (arg == "--scroll") {
+        }
+        else if (arg == "--scroll") {
             style = Style::SCROLL;
-        } else {
+        }
+        else {
             std::cerr << "<!> Error: unknown argument detected: " << argv[i] << std::endl;
             return 1;
         }
@@ -147,14 +149,8 @@ int main(int argc, char **argv) {
             }
             std::cout << "" + pdf_paths[i];
         }
-        std::cout << std::endl;
-
-        if (output == "") {
-            string path = pdf_paths[0];
-            output = path.substr(0, path.find_last_of('.')) + format;
-        }
     }
-    if (is_seq) {
+    else if (is_seq) {
         std::cout << "Sequence Directories (" << seq_dirs.size() << "): ";
         for (size_t i = 0; i < seq_dirs.size(); i++) {
             if (i > 0) {
@@ -162,24 +158,29 @@ int main(int argc, char **argv) {
             }
             std::cout << "" + seq_dirs[i];
         }
-        std::cout << std::endl;
-
-        if (output == "") {
-            string path = seq_dirs[0];
-            output = path.substr(0, path.find_last_of('/')) + format;
-        }
+    }
+    std::cout << std::endl;
+    if (output == "" && is_seq) {
+        string path = seq_dirs[0];
+        output = path.substr(0, path.find_last_of('/')) + format;
+    }
+    else if (output == "" && is_pdf) {
+        string path = pdf_paths[0];
+        output = path.substr(0, path.find_last_of('.')) + format;
     }
     std::cout << "Output: " << output << std::endl;
-    std::cout << "Resolution: " << width << "x" << height << std::endl;
-    std::cout << "FPS: " << fps << std::endl;
-    if (duration != -1.0 && style == Style::SCROLL) {
-        std::cout << "Duration: " << duration << "s" << std::endl;
-    } else if (style == Style::SCROLL) {
-        std::cout << "SPP: " << spp << "s" << std::endl;
+    std::cout << "Resolution: " << vp.width << "x" << vp.height << std::endl;
+    std::cout << "FPS: " << vp.fps << std::endl;
+    if (vp.duration != -1.0 && style == Style::SCROLL) {
+        std::cout << "Duration: " << vp.duration << "s" << std::endl;
+    }
+    else if (style == Style::SCROLL) {
+        std::cout << "SPP: " << vp.spp << "s" << std::endl;
     }
     if (style == Style::SCROLL) {
         std::cout << "Style: SCROLL" << std::endl;
-    } else if (style == Style::SEQUENCE) {
+    }
+    else if (style == Style::SEQUENCE) {
         std::cout << "Style: SEQUENCE" << std::endl;
     }
 
@@ -192,44 +193,27 @@ int main(int argc, char **argv) {
     }
     std::cin.clear();
 
-    // creates the vp
-    struct VP vp = {
-        width,
-        height,
-        fps,
-        spp,
-        duration,
-    };
-
-    // Application Logic
+    // loads images into vector
     vector<cv::Mat> images = {};
     if (is_pdf) {
         poppler::document *pdf = poppler::document::load_from_file(pdf_paths[0]);
-
-        // sets viewport's resolution to full res of first pdf page
         poppler::rectf rect = pdf->create_page(0)->page_rect(poppler::media_box);
-        if (width == -1) {
+        // sets viewport's resolution to the full resolution of the first pdf page
+        if (vp.width == -1)
             vp.width = rect.width();
-        }
-        if (height == -1) {
+        if (vp.height == -1)
             vp.height = rect.height();
-        }
-
         images = get_images(pdf_paths, style, vp);
     }
     else if (is_seq) {
         std::map<int, string> img_map = get_image_sequence_map(seq_dirs);
-
-        // sets viewport res to resolution of img
         cv::Mat img = cv::imread(img_map[-1]);
-        if (width == -1) {
+        // Sets viewport's resolution to the full resolution of the first image in the sequence.
+        if (vp.width == -1)
             vp.width = img.cols % 2 == 0 ? img.cols : img.cols + 1;
-        }
-        if (height == -1) {
+        if (vp.height == -1)
             vp.height = img.rows % 2 == 0 ? img.rows : img.rows + 1;
-        }
         img_map.erase(-1);
-
         images = get_images(img_map, style, vp);
     }
 
@@ -244,13 +228,12 @@ int main(int argc, char **argv) {
         generate_sequence_video(video, images, vp);
     }
 
+    // clean up
     video.release();
     for (auto &img : images) {
         img.release();
     }
-
     std::cout << "Finished generating video." << std::endl;
-
     return 0;
 }
 
@@ -291,9 +274,8 @@ void scale_image_to_fit(cv::Mat &img, struct VP &vp) {
 // returns dpi to scale page to viewport width
 float get_scaled_dpi_from_width(poppler::page *page, int width) {
     auto rect = page->page_rect(poppler::media_box);
-    if (rect.width() == width) {
+    if (rect.width() == width)
         return DEFAULT_DPI;
-    }
     return ((float)width * DEFAULT_DPI) / (float)rect.width();
 }
 
@@ -366,14 +348,13 @@ vector<cv::Mat> get_images(std::map<int, string> img_map, Style style, struct VP
 
     // reads images in numerical order
     for (size_t i = 0; i < img_map.size(); i++) {
-        if (img_map[i] == "") continue;
+        if (img_map[i] == "")
+            continue;
         cv::Mat mat = cv::imread(img_map[i]);
-
-        if (style == Style::SCROLL) {
+        if (style == Style::SCROLL)
             scale_image_to_width(mat, vp.width);
-        } else if (style == Style::SEQUENCE) {
+        else if (style == Style::SEQUENCE)
             scale_image_to_fit(mat, vp);
-        }
 
         // makes dimentions of the image divisible by 2.
         // ffmpeg will get upset if otherwise.
@@ -389,12 +370,11 @@ vector<cv::Mat> get_images(std::map<int, string> img_map, Style style, struct VP
 
 // returns images read from pdf files
 vector<cv::Mat> get_images(vector<string> pdf_paths, Style style, VP &vp) {
-    std::cout << "Loading Images..." << std::endl;
-
     int total_pages = 0;
     auto renderer = poppler::page_renderer();
     vector<cv::Mat> images = {};
 
+    std::cout << "Loading Images..." << std::endl;
     for (size_t i = 0; i < pdf_paths.size(); i++) {
         int curr_index = total_pages;
         poppler::document *pdf = poppler::document::load_from_file(pdf_paths[i]);
@@ -411,33 +391,36 @@ vector<cv::Mat> get_images(vector<string> pdf_paths, Style style, VP &vp) {
             poppler::page *page = pdf->create_page(pg);
 
             // scales pages to correctly fit inside displayport.
-            if (style == Style::SCROLL) {
+            if (style == Style::SCROLL)
                 dpi = get_scaled_dpi_from_width(page, vp.width);
-            } else if (style == Style::SEQUENCE) {
+            else if (style == Style::SEQUENCE)
                 dpi = get_scaled_dpi_to_fit(page, vp);
-            }
 
             poppler::image img = renderer.render_page(page, dpi, dpi);
             cv::Mat mat;
-
             // Determine the format
             if (img.data() == nullptr) {
                 std::cerr << "<!> Error: Page " << pg << " has no data to load. Skipped." << std::endl;
                 images.erase(images.begin() + curr_index);
                 continue;
-            } else if (img.format() == poppler::image::format_invalid) {
+            }
+            else if (img.format() == poppler::image::format_invalid) {
                 std::cerr << "<!> Error: Page " << pg << " has invalid image format. Skipped." << std::endl;
                 images.erase(images.begin() + curr_index);
                 continue;
-            } else if (img.format() == poppler::image::format_gray8) {
+            }
+            else if (img.format() == poppler::image::format_gray8) {
                 cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC1, img.data(), img.bytes_per_row());
                 cv::cvtColor(tmp, mat, cv::COLOR_GRAY2RGB);
-            } else if (img.format() == poppler::image::format_rgb24) {
+            }
+            else if (img.format() == poppler::image::format_rgb24) {
                 mat = cv::Mat(img.height(), img.width(), CV_8UC3, img.data(), img.bytes_per_row());
-            } else if (img.format() == poppler::image::format_bgr24) {
+            }
+            else if (img.format() == poppler::image::format_bgr24) {
                 cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC3, img.data(), img.bytes_per_row());
                 cv::cvtColor(tmp, mat, cv::COLOR_BGR2RGB);
-            } else if (img.format() == poppler::image::format_argb32) {
+            }
+            else if (img.format() == poppler::image::format_argb32) {
                 cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC4, img.data(), img.bytes_per_row());
                 cv::cvtColor(tmp, mat, cv::COLOR_RGBA2RGB);
             }
@@ -449,21 +432,21 @@ vector<cv::Mat> get_images(vector<string> pdf_paths, Style style, VP &vp) {
                 int cols = mat.cols % 2 != 0 ? mat.cols + 1 : mat.cols;
                 cv::Rect2i roi(0, 0, mat.cols, mat.rows);
                 cv::Mat tmp_mat(rows, cols, CV_8UC3, cv::Scalar(0, 0, 0));
-
                 mat.copyTo(tmp_mat(roi));
                 tmp_mat.copyTo(images[curr_index]);
-            } else {
+            }
+            else {
                 mat.copyTo(images[curr_index]);
             }
         }
     }
-
     return images;
 }
 
 // scroll effect
 void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, struct VP &vp) {
     float px_per_frame = 0;
+    float h = 0;
     cv::Mat long_img(vp.height + imgs[0].rows, vp.width, CV_8UC3, cv::Scalar(0, 0, 0));
     cv::Mat vp_img(vp.height, vp.width, CV_8UC3, cv::Scalar(0, 0, 0));
     cv::Rect2d roi(0, vp.height, imgs[0].cols, imgs[0].rows);
@@ -473,18 +456,16 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, str
     for (size_t i = 0; i < imgs.size(); i++) {
         height += imgs[i].rows;
     }
-    if (vp.duration != -1.0) {
+    if (vp.duration != -1.0)
         px_per_frame = (float)height / (vp.fps * vp.duration);
-    } else {
+    else
         px_per_frame = (float)height / (vp.fps * vp.spp * imgs.size());
-    }
-    if (px_per_frame == 0.0) {
-        px_per_frame = 0.5;
+    if (px_per_frame <= 0.0) {
+        px_per_frame = 1.0;
+        std::cout << "<!> Warning: pixels per frame <= 0.0, set value to 1.0" << std::endl;
     }
     std::cout << "Pixels per frame: " << px_per_frame << std::endl;
-
     std::cout << "Generating video..." << std::endl;
-    float h = 0;
     for (size_t i = 1; i < imgs.size(); i++) {
         std::cout << i << "/" << imgs.size() << std::endl;
         // generates and writes frames to video file
@@ -498,17 +479,15 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, str
         float unused_height = long_img.rows - (h + vp.height); // height not yet rendered in vp.
         float new_long_h = vp.height + unused_height + imgs[i].rows;
         cv::Mat new_long;
-        if (imgs.size() - 2 == i) { // allows video to scroll to black at end
+        if (imgs.size() - 2 == i) // allows video to scroll to black at end
             new_long = cv::Mat(std::ceil(new_long_h) + vp.height + px_per_frame, vp.width, CV_8UC3, cv::Scalar(0, 0, 0));
-        } else {
+        else
             new_long = cv::Mat(std::ceil(new_long_h), vp.width, CV_8UC3, cv::Scalar(0, 0, 0));
-        }
         cv::Rect2d tmp_ROI(0.0, h, vp.width, unused_height + vp.height);
         cv::Rect2d dst_ROI(0.0, 0.0, vp.width, unused_height + vp.height);
         long_img(tmp_ROI).copyTo(new_long(dst_ROI));
         cv::Rect2d next_ROI(0.0, unused_height + vp.height, vp.width, imgs[i].rows);
         imgs[i].copyTo(new_long(next_ROI));
-
         long_img = new_long;
         h = 0.0;
     }
@@ -518,7 +497,6 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, str
 // classic image sequence effect
 void generate_sequence_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, struct VP &vp) {
     std::cout << "Generating video..." << std::endl;
-
     for (size_t i = 0; i < imgs.size(); i ++) {
         cv::Mat img = imgs[i];
         cv::Mat vp_img = cv::Mat(vp.height, vp.width, img.type(), cv::Scalar(0, 0, 0));
@@ -526,11 +504,10 @@ void generate_sequence_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, struct
         int y = 0;
 
         // adds offset
-        if (vp_img.cols - img.cols >= 2) {
+        if (vp_img.cols - img.cols >= 2)
             x += (vp_img.cols - img.cols) / 2;
-        } else if (vp_img.rows - img.rows >= 2) {
+        else if (vp_img.rows - img.rows >= 2)
             y += (vp_img.rows - img.rows) / 2;
-        }
 
         // prevents stretching of images when being rendered.
         // keeps them within the vp.

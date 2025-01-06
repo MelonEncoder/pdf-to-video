@@ -1,5 +1,5 @@
-#ifndef PTVMACROS_HPP
-#define PTVMACROS_HPP
+#ifndef PTV_HPP
+#define PTV_HPP
 
 #define HELP_TXT "\
 ptv [options...]\n\

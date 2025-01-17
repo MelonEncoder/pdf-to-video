@@ -1,9 +1,7 @@
-project('pti_v2', 'cpp')
+project('pdf_to_video', 'cpp')
 
-output = 'test.out'
-
+output = 'ptv.test'
 srcs = ['src/main.cpp']
-
 include_dirs = [
     '/usr/include/poppler',
     '/usr/include/opencv4/opencv2',
@@ -23,10 +21,15 @@ args = [
     '-DWITH_FFMPEG=ON',
 ]
 
+## Dependencies
+poppler = dependency('poppler-cpp')
+opencv = dependency('opencv4')
+
 executable(
     output,
     sources: srcs,
     include_directories: include_dirs,
     link_args: linked_libs,
     cpp_args: args,
+    dependencies: [poppler, opencv],
 )

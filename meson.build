@@ -1,35 +1,22 @@
 project('pdf_to_video', 'cpp')
 
 output = 'ptv.test'
-srcs = ['src/main.cpp']
-include_dirs = [
-    '/usr/include/poppler',
-    '/usr/include/opencv4/opencv2',
+srcs = [
+    'src/main.cpp',
 ]
-
-## found in the /usr/lib/ dir
-linked_libs = [
-    '-lpoppler-cpp',
-    '-lopencv_core',
-    '-lopencv_imgproc',
-    '-lopencv_highgui',
-    '-lopencv_imgcodecs',
-    '-lopencv_videoio',
-]
-
 args = [
     '-DWITH_FFMPEG=ON',
 ]
 
 ## Dependencies
-poppler = dependency('poppler-cpp')
-opencv = dependency('opencv4')
+deps = [
+    dependency('poppler-cpp', version: '>=25.01.0'),
+    dependency('opencv4', version: '>=4.10.0'),
+]
 
 executable(
     output,
     sources: srcs,
-    include_directories: include_dirs,
-    link_args: linked_libs,
     cpp_args: args,
-    dependencies: [poppler, opencv],
+    dependencies: deps,
 )

@@ -5,6 +5,8 @@
 #include <vector>
 #include <iostream>
 #include <filesystem>
+#include "opencv.hpp"
+#include "poppler-rectangle.h"
 
 namespace ptv {
 
@@ -100,6 +102,8 @@ class Config {
                     }
                     width_ = std::stoi(currArg.substr(0, currArg.find('x')));
                     height_ = std::stoi(currArg.substr(currArg.find('x') + 1));
+                    set_width(width_);
+                    set_height(height_);
                     if (width_ < 0 || height_ < 0) {
                         std::cerr << "<!> Resolution input cannot be negative." << std::endl;
                         exit(1);
@@ -196,6 +200,24 @@ class Config {
             std::cin.clear();
         }
 
+        void set_resolution(cv::Mat img) {
+            if (width_ == 0) {
+                set_width(img.cols);
+            }
+            if (height_ == 0) {
+                set_height(img.rows);
+            }
+        }
+
+        void set_resolution(poppler::rectf rect) {
+            if (width_ == 0) {
+                set_width(rect.width());
+            }
+            if (height_ == 0) {
+                set_height(rect.height());
+            }
+        }
+
         // Getters
         bool get_is_pdf() { return is_pdf_; }
         bool get_is_seq() { return is_seq_; }
@@ -211,8 +233,8 @@ class Config {
         std::vector<std::string> get_seq_dirs() { return seq_dirs_; }
 
         // Setters
-        void set_width(unsigned int w) { width_ = w; }
-        void set_height(unsigned int h) { height_ = h; }
+        void set_width(int w) { width_ = w % 2 == 0 ? w : w + 1; }
+        void set_height(int h) { height_ = h % 2 == 0 ? h : h + 1; }
 };
 
 }

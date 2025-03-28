@@ -1,5 +1,4 @@
 #include "opencv.hpp"
-#include "poppler-global.h"
 #include "poppler.hpp"
 #include "ptv.hpp"
 #include <cmath>
@@ -7,6 +6,7 @@
 #include <string>
 #include <filesystem>
 #include <vector>
+#include <ctime>
 
 using std::string;
 using std::vector;
@@ -23,7 +23,7 @@ float get_scaled_dpi_from_width(poppler::page *page, int width); // dpi fits pag
 float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf); // dpi fits page in viewport
 
 std::map<int, string> get_image_seq_map(vector<string> seq_dirs);
-vector<cv::Mat> get_seq_images(std::map<int, string> &img_map, ptv::Config &conf);
+vector<cv::Mat> get_seq_images(ptv::Config &conf);
 vector<cv::Mat> get_pdf_images(ptv::Config &conf);
 
 void generate_scroll_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, ptv::Config &conf);
@@ -35,27 +35,18 @@ void generate_sequence_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, ptv::C
 
 int main(int argc, char **argv) {
     ptv::Config conf(argc, argv);
+    time_t start_time = time(NULL);
 
-    // loads images into vector
+    std::cout << "Loading Images..." << std::endl;
     vector<cv::Mat> images = {};
     if (conf.get_is_pdf()) {
         images = get_pdf_images(conf);
     }
     else if (conf.get_is_seq()) {
-        std::map<int, string> img_map = get_image_seq_map(conf.get_seq_dirs());
-        cv::Mat img = cv::imread(img_map[-1]);
-        // Sets viewport's resolution to the full resolution of the first image in the sequence.
-        if (conf.get_width() == 0) {
-            conf.set_width(img.cols % 2 == 0 ? img.cols : img.cols + 1);
-        }
-        if (conf.get_height() == 0) {
-            conf.set_height(img.rows % 2 == 0 ? img.rows : img.rows + 1);
-        }
-        img_map.erase(-1);
-        images = get_seq_images(img_map, conf);
+        images = get_seq_images(conf);
     }
 
-    // inits video renderer
+    // Initiates video renderer
     cv::Size frame_size(conf.get_width(), conf.get_height());
     cv::VideoWriter video = cv::VideoWriter(conf.get_output(), cv::CAP_FFMPEG, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), conf.get_fps(), frame_size, true);
 
@@ -63,15 +54,20 @@ int main(int argc, char **argv) {
     if (conf.get_style() == FRAMES) {
         generate_sequence_video(video, images, conf);
     } else {
-        generate_scroll_video(video, images, conf);
+        generate_scroll_video(video, images, conf); // TODO: Add scroll Down, Left, and Right
     }
 
-    // clean up
+    // Clean Up
     video.release();
     for (auto &img : images) {
         img.release();
     }
-    std::cout << "Finished generating video." << std::endl;
+    std::cout << "Finished generating video!" << std::endl;
+    size_t duration = difftime(time(NULL), start_time);
+    size_t minutes = duration / 60;
+    size_t seconds = duration % 60;
+    std::cout << "Time: " << minutes << "m " << seconds << "s" << std::endl;
+
     return 0;
 }
 
@@ -181,9 +177,14 @@ std::map<int, string> get_image_seq_map(vector<string> seq_dirs) {
 }
 
 // returns images read from image sequence directory
-vector<cv::Mat> get_seq_images(std::map<int, string> &img_map, ptv::Config &conf) {
-    std::cout << "Loading images..." << std::endl;
+vector<cv::Mat> get_seq_images(ptv::Config &conf) {
+    std::map<int, string> img_map = get_image_seq_map(conf.get_seq_dirs());
     vector<cv::Mat> images;
+
+    // Sets video resolution to resolution of first image in the sequence.
+    cv::Mat img = cv::imread(img_map[-1]);
+    conf.set_resolution(img);
+    img_map.erase(-1);
 
     // reads images in numerical order
     for (size_t i = 0; i < img_map.size(); i++) {
@@ -215,7 +216,6 @@ vector<cv::Mat> get_pdf_images(ptv::Config &conf) {
     auto renderer = poppler::page_renderer();
     vector<cv::Mat> images = {};
 
-    std::cout << "Loading Images..." << std::endl;
     for (size_t i = 0; i < conf.get_pdf_paths().size(); i++) {
         poppler::document *pdf = poppler::document::load_from_file(conf.get_pdf_paths()[i]);
         int index = total_pages;
@@ -234,13 +234,7 @@ vector<cv::Mat> get_pdf_images(ptv::Config &conf) {
             // If -r 0x0, adjusts resolution to fit first page
             if (index == 0) {
                 poppler::rectf rect = page->page_rect(poppler::media_box);
-                if (conf.get_width() == 0) {
-                    conf.set_width(((int)rect.width() % 2 == 0) ? rect.width() : rect.width() + 1);
-                }
-                if (conf.get_height() == 0) {
-                    conf.set_height(((int)rect.height() % 2 == 0) ? rect.height() : rect.height() + 1);
-                }
-                std::cout << "Adjusted Resolution: Location get pdf imgs\n";
+                conf.set_resolution(rect);
             }
 
             // Scales pages to correctly fit inside video resolution.

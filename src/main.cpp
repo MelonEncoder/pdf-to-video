@@ -1,4 +1,5 @@
 #include "opencv.hpp"
+#include "poppler-global.h"
 #include "poppler.hpp"
 #include "ptv.hpp"
 #include <cmath>
@@ -22,8 +23,8 @@ float get_scaled_dpi_from_width(poppler::page *page, int width); // dpi fits pag
 float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf); // dpi fits page in viewport
 
 std::map<int, string> get_image_seq_map(vector<string> seq_dirs);
-vector<cv::Mat> get_images_from_seq(std::map<int, string> &img_map, ptv::Config &conf);
-vector<cv::Mat> get_images_from_pdf(ptv::Config &conf);
+vector<cv::Mat> get_seq_images(std::map<int, string> &img_map, ptv::Config &conf);
+vector<cv::Mat> get_pdf_images(ptv::Config &conf);
 
 void generate_scroll_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, ptv::Config &conf);
 void generate_sequence_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, ptv::Config &conf);
@@ -38,16 +39,7 @@ int main(int argc, char **argv) {
     // loads images into vector
     vector<cv::Mat> images = {};
     if (conf.get_is_pdf()) {
-        poppler::document *pdf = poppler::document::load_from_file(conf.get_pdf_paths()[0]);
-        poppler::rectf rect = pdf->create_page(0)->page_rect(poppler::media_box);
-        // sets viewport's resolution to the full resolution of the first pdf page
-        if (conf.get_width() == 0) {
-            conf.set_width(rect.width());
-        }
-        if (conf.get_height() == 0) {
-            conf.set_height(rect.height());
-        }
-        images = get_images_from_pdf(conf);
+        images = get_pdf_images(conf);
     }
     else if (conf.get_is_seq()) {
         std::map<int, string> img_map = get_image_seq_map(conf.get_seq_dirs());
@@ -60,7 +52,7 @@ int main(int argc, char **argv) {
             conf.set_height(img.rows % 2 == 0 ? img.rows : img.rows + 1);
         }
         img_map.erase(-1);
-        images = get_images_from_seq(img_map, conf);
+        images = get_seq_images(img_map, conf);
     }
 
     // inits video renderer
@@ -189,7 +181,7 @@ std::map<int, string> get_image_seq_map(vector<string> seq_dirs) {
 }
 
 // returns images read from image sequence directory
-vector<cv::Mat> get_images_from_seq(std::map<int, string> &img_map, ptv::Config &conf) {
+vector<cv::Mat> get_seq_images(std::map<int, string> &img_map, ptv::Config &conf) {
     std::cout << "Loading images..." << std::endl;
     vector<cv::Mat> images;
 
@@ -218,15 +210,15 @@ vector<cv::Mat> get_images_from_seq(std::map<int, string> &img_map, ptv::Config 
 }
 
 // returns images read from pdf files
-vector<cv::Mat> get_images_from_pdf(ptv::Config &conf) {
+vector<cv::Mat> get_pdf_images(ptv::Config &conf) {
     int total_pages = 0;
     auto renderer = poppler::page_renderer();
     vector<cv::Mat> images = {};
 
     std::cout << "Loading Images..." << std::endl;
     for (size_t i = 0; i < conf.get_pdf_paths().size(); i++) {
-        int curr_index = total_pages;
         poppler::document *pdf = poppler::document::load_from_file(conf.get_pdf_paths()[i]);
+        int index = total_pages;
         total_pages += pdf->pages();
 
         // required to copy pdf data into vector
@@ -234,12 +226,24 @@ vector<cv::Mat> get_images_from_pdf(ptv::Config &conf) {
             images.emplace_back(cv::Mat(100, 100, CV_8UC3, cv::Scalar(0, 0, 0)));
         }
 
-        // gets pages of individual pdf files
-        for (int pg = 0; curr_index < total_pages; curr_index++, pg++) {
+        // Gets pages of individual pdf files
+        for (int pg = 0; index < total_pages; index++, pg++) {
             float dpi = DEFAULT_DPI;
             poppler::page *page = pdf->create_page(pg);
 
-            // scales pages to correctly fit inside displayport.
+            // If -r 0x0, adjusts resolution to fit first page
+            if (index == 0) {
+                poppler::rectf rect = page->page_rect(poppler::media_box);
+                if (conf.get_width() == 0) {
+                    conf.set_width(((int)rect.width() % 2 == 0) ? rect.width() : rect.width() + 1);
+                }
+                if (conf.get_height() == 0) {
+                    conf.set_height(((int)rect.height() % 2 == 0) ? rect.height() : rect.height() + 1);
+                }
+                std::cout << "Adjusted Resolution: Location get pdf imgs\n";
+            }
+
+            // Scales pages to correctly fit inside video resolution.
             if (conf.get_style()== FRAMES) {
                 dpi = get_scaled_dpi_to_fit(page, conf);
             } else {
@@ -248,14 +252,14 @@ vector<cv::Mat> get_images_from_pdf(ptv::Config &conf) {
 
             poppler::image img = renderer.render_page(page, dpi, dpi);
             cv::Mat mat;
-            // Determine the format
+            // Determine the color space
             if (img.data() == nullptr) {
                 std::cerr << "<!> Error: Page " << pg << " has no data to load. Skipped." << std::endl;
-                images.erase(images.begin() + curr_index);
+                images.erase(images.begin() + index);
                 continue;
             } else if (img.format() == poppler::image::format_invalid) {
                 std::cerr << "<!> Error: Page " << pg << " has invalid image format. Skipped." << std::endl;
-                images.erase(images.begin() + curr_index);
+                images.erase(images.begin() + index);
                 continue;
             } else if (img.format() == poppler::image::format_gray8) {
                 cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC1, img.data(), img.bytes_per_row());
@@ -269,19 +273,7 @@ vector<cv::Mat> get_images_from_pdf(ptv::Config &conf) {
                 cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC4, img.data(), img.bytes_per_row());
                 cv::cvtColor(tmp, mat, cv::COLOR_RGBA2RGB);
             }
-
-            // makes sure dimentions are even
-            // ffmpeg will get upset if odd
-            if (mat.rows % 2 != 0 || mat.cols % 2 != 0) {
-                int rows = mat.rows % 2 != 0 ? mat.rows + 1 : mat.rows;
-                int cols = mat.cols % 2 != 0 ? mat.cols + 1 : mat.cols;
-                cv::Rect2i roi(0, 0, mat.cols, mat.rows);
-                cv::Mat tmp_mat(rows, cols, CV_8UC3, cv::Scalar(0, 0, 0));
-                mat.copyTo(tmp_mat(roi));
-                tmp_mat.copyTo(images[curr_index]);
-            } else {
-                mat.copyTo(images[curr_index]);
-            }
+            mat.copyTo(images[index]);
         }
     }
     return images;
@@ -295,6 +287,7 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv
     cv::Mat vp_img(conf.get_height(), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
     cv::Rect2d roi(0, conf.get_height(), imgs[0].cols, imgs[0].rows);
     imgs[0].copyTo(dst_img(roi));
+    imgs[0].release();
 
     int height_of_imgs = 0;
     for (size_t i = 0; i < imgs.size(); i++) {

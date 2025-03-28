@@ -1,4 +1,6 @@
 #include "opencv.hpp"
+#include "opencv2/core.hpp"
+#include "opencv2/core/operations.hpp"
 #include "poppler.hpp"
 #include "ptv.hpp"
 #include <cmath>
@@ -35,6 +37,7 @@ void generate_sequence_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, ptv::C
 
 int main(int argc, char **argv) {
     ptv::Config conf(argc, argv);
+
     time_t start_time = time(NULL);
 
     std::cout << "Loading Images..." << std::endl;
@@ -46,11 +49,11 @@ int main(int argc, char **argv) {
         images = get_seq_images(conf);
     }
 
-    // Initiates video renderer
+    std::cout << "Initializing Video Renderer..." << std::endl;
     cv::Size frame_size(conf.get_width(), conf.get_height());
     cv::VideoWriter video = cv::VideoWriter(conf.get_output(), cv::CAP_FFMPEG, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), conf.get_fps(), frame_size, true);
 
-    // generates frames
+    std::cout << "Generating Video..." << std::endl;
     if (conf.get_style() == FRAMES) {
         generate_sequence_video(video, images, conf);
     } else {
@@ -63,6 +66,8 @@ int main(int argc, char **argv) {
         img.release();
     }
     std::cout << "Finished generating video!" << std::endl;
+
+    // Time
     size_t duration = difftime(time(NULL), start_time);
     size_t minutes = duration / 60;
     size_t seconds = duration % 60;
@@ -281,26 +286,24 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv
     cv::Mat vp_img(conf.get_height(), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
     cv::Rect2d roi(0, conf.get_height(), imgs[0].cols, imgs[0].rows);
     imgs[0].copyTo(dst_img(roi));
-    imgs[0].release();
 
+    // Find px_per_frame
     int height_of_imgs = 0;
     for (size_t i = 0; i < imgs.size(); i++) {
         height_of_imgs += imgs[i].size().height;
     }
-
     if (conf.get_duration() == 0) {
         px_per_frame += height_of_imgs / (conf.get_fps() * conf.get_spp() * imgs.size());
     } else {
         px_per_frame = height_of_imgs / (conf.get_fps() * conf.get_duration());
     }
-
     if (px_per_frame <= 0.0f) {
         px_per_frame = 1.0f;
         std::cout << "<!> Warning: pixels per frame value was <= 0.0, set value to 1.0" << std::endl;
     }
     std::cout << "Pixels per frame: " << px_per_frame << std::endl;
-    std::cout << "Generating video..." << std::endl;
 
+    //
     for (size_t i = 1; i < imgs.size(); i++) {
         // Generates and writes frames to video file
         while (((float)dst_img.rows - (h + conf.get_height())) > px_per_frame) {
@@ -319,13 +322,17 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv
         } else {
             new_dst_img = cv::Mat(std::ceil(new_dst_h), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
         }
-        cv::Rect2d tmp_ROI(0.0, h, conf.get_width(), unused_height + conf.get_height());
-        cv::Rect2d dst_ROI(0.0, 0.0, conf.get_width(), unused_height + conf.get_height());
-        dst_img(tmp_ROI).copyTo(new_dst_img(dst_ROI));
-        cv::Rect2d next_ROI(0.0, unused_height + conf.get_height(), conf.get_width(), imgs[i].rows);
-        imgs[i].copyTo(new_dst_img(next_ROI));
-        dst_img = new_dst_img;
-        h = 0.0;
+        try {
+            cv::Rect2d tmp_ROI(0.0, h, conf.get_width(), unused_height + conf.get_height());
+            cv::Rect2d dst_ROI(0.0, 0.0, conf.get_width(), unused_height + conf.get_height());
+            dst_img(tmp_ROI).copyTo(new_dst_img(dst_ROI));
+            cv::Rect2d next_ROI(0.0, unused_height + conf.get_height(), conf.get_width(), imgs[i].rows);
+            imgs[i].copyTo(new_dst_img(next_ROI));
+            dst_img = new_dst_img;
+            h = 0.0;
+        } catch (cv::Exception e) {
+            std::cerr << "<!> Exception: " << e.msg << "\nLine: " << e.line << std::endl;
+        }
 
         // Finished Rendering Current Image
         std::cout << i << "/" << imgs.size() << std::endl;
@@ -335,7 +342,6 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv
 
 // classic image sequence effect
 void generate_sequence_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, ptv::Config &conf) {
-    std::cout << "Generating video..." << std::endl;
     for (size_t i = 0; i < imgs.size(); i ++) {
         cv::Mat img = imgs[i];
         cv::Mat vp_img = cv::Mat(conf.get_height(), conf.get_width(), img.type(), cv::Scalar(0, 0, 0));

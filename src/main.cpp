@@ -10,8 +10,6 @@
 #include <vector>
 #include <ctime>
 
-using std::string;
-using std::vector;
 namespace fs = std::filesystem;
 
 // ======= //
@@ -24,12 +22,12 @@ void scale_image_to_fit(cv::Mat& img, ptv::Config &conf);
 float get_scaled_dpi_from_width(poppler::page *page, int width); // dpi fits page to vp width
 float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf); // dpi fits page in viewport
 
-std::map<int, string> get_image_seq_map(vector<string> seq_dirs);
-vector<cv::Mat> get_seq_images(ptv::Config &conf);
-vector<cv::Mat> get_pdf_images(ptv::Config &conf);
+std::map<int, std::string> get_dir_entry_map(std::string dir_path);
+void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
+void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
 
-void generate_scroll_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, ptv::Config &conf);
-void generate_sequence_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, ptv::Config &conf);
+void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf);
+void generate_sequence_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf);
 
 // ============= //
 // Main Function //
@@ -38,15 +36,32 @@ void generate_sequence_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, ptv::C
 int main(int argc, char **argv) {
     ptv::Config conf(argc, argv);
 
+    // Start timer after accepting settings
     time_t start_time = time(NULL);
 
+    // == FIGURE OUT CONDITION FOR -r 0x0 ==
+    //
+    // If -r 0x0, adjusts resolution to fit first page
+    // if (pg == 0) {
+    //     poppler::rectf rect = page->page_rect(poppler::media_box);
+    //     conf.set_resolution(rect);
+    // }
+    // Sets video resolution to resolution of first image in the sequence.
+    // cv::Mat img = cv::imread(img_map[-1]);
+    // conf.set_resolution(img);
+    // img_map.erase(-1);
+
     std::cout << "Loading Images..." << std::endl;
-    vector<cv::Mat> images = {};
-    if (conf.get_is_pdf()) {
-        images = get_pdf_images(conf);
-    }
-    else if (conf.get_is_seq()) {
-        images = get_seq_images(conf);
+    std::vector<cv::Mat> images = {};
+    std::vector<std::string> paths = conf.get_input_paths();
+    std::vector<std::string> types = conf.get_input_types();
+    for (size_t i = 0; i < paths.size(); i++) {
+        if (types[i] == "pdf") {
+            add_pdf_images(paths[i], images, conf);
+        } else if (types[i] == "dir") {
+            add_dir_images(paths[i], images, conf);
+        }
+        std::cout << "INPUT: " << i << std::endl;
     }
 
     std::cout << "Initializing Video Renderer..." << std::endl;
@@ -60,8 +75,10 @@ int main(int argc, char **argv) {
         generate_scroll_video(video, images, conf); // TODO: Add scroll Down, Left, and Right
     }
 
-    // Clean Up
+    // Finish Video
     video.release();
+
+    // Clean Up
     for (auto &img : images) {
         img.release();
     }
@@ -145,58 +162,47 @@ float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf) {
     return DEFAULT_DPI;
 }
 
-// returns ordered image paths
-std::map<int, string> get_image_seq_map(vector<string> seq_dirs) {
-    int count = 0;
-    int small = 99;
-    std::map<int, string> image_map;
+// Returns paths of each file in the directory, excludes nested directories.
+std::map<int, std::string> get_dir_entry_map(std::string dir_path) {
+    std::map<int, std::string> image_map;
 
-    for (size_t i = 0; i < seq_dirs.size(); i++) {
-        // creates hash-map of valid image paths in numerical order
-        for (const auto &entry : fs::directory_iterator(seq_dirs[i])) {
-            if (!fs::is_directory(entry)) {
-                int index;
-                string path = entry.path().string();
-                string name = entry.path().filename().string();
-                try {
-                    index = std::stoi(name.substr(0, name.length() - name.find_last_of('.'))) + count;
-                } catch (const std::invalid_argument& e) {
-                    std::cerr << "<!> Warning: " << name << " skipped. Number not found." << std::endl;
-                    continue;
-                } catch (const std::out_of_range& e) {
-                    std::cerr << "<!> Out of Range: geting int value from image name, get_images()." << std::endl;
-                    continue;
-                }
-                if (index < small) {
-                    small = index;
-                }
-                image_map.insert(std::make_pair(index, path));
+    // Creates hash-map of valid image paths in numerical order
+    for (const auto &entry : fs::directory_iterator(dir_path)) {
+        if (!fs::is_directory(entry)) {
+            int index;
+            std::string path = entry.path().string();
+            std::string name = entry.path().filename().string();
+            try {
+                index = std::stoi(name.substr(0, name.length() - name.find_last_of('.')));
+            } catch (const std::invalid_argument& e) {
+                std::cerr << "<!> Warning: " << name << " skipped. Number not found." << std::endl;
+                continue;
+            } catch (const std::out_of_range& e) {
+                std::cerr << "<!> Out of Range: geting int value from image name, get_images()." << std::endl;
+                continue;
             }
+            image_map.insert(std::make_pair(index, path));
         }
-        count += image_map.size();
     }
-
-    // used to define resolution when -r of 0 inputed as value
-    image_map.insert(std::make_pair(-1, image_map[small]));
     return image_map;
 }
 
 // returns images read from image sequence directory
-vector<cv::Mat> get_seq_images(ptv::Config &conf) {
-    std::map<int, string> img_map = get_image_seq_map(conf.get_seq_dirs());
-    vector<cv::Mat> images;
+void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
+    std::map<int, std::string> entry_map = get_dir_entry_map(dir_path);
 
-    // Sets video resolution to resolution of first image in the sequence.
-    cv::Mat img = cv::imread(img_map[-1]);
-    conf.set_resolution(img);
-    img_map.erase(-1);
+    std::cout << "Finished Mapping\n";
 
-    // reads images in numerical order
-    for (size_t i = 0; i < img_map.size(); i++) {
-        if (img_map[i] == "") {
+    // Reads images in numerical order
+    size_t count = 0;
+    size_t map_size = entry_map.size();
+
+    for (size_t i = 0; count < map_size; i++) {
+        if (entry_map[i] == "") {
             continue;
         }
-        cv::Mat mat = cv::imread(img_map[i]);
+
+        cv::Mat mat = cv::imread(entry_map[i]);
         if (conf.get_style() == FRAMES) {
             scale_image_to_fit(mat, conf);
         } else {
@@ -210,72 +216,61 @@ vector<cv::Mat> get_seq_images(ptv::Config &conf) {
         cv::Rect2i roi(0, 0, mat.cols, mat.rows);
         cv::Mat tmp_mat(rows, cols, CV_8UC3, cv::Scalar(0, 0, 0));
         mat.copyTo(tmp_mat(roi));
-        images.push_back(cv::Mat(tmp_mat));
+        vid_images.push_back(cv::Mat(tmp_mat));
+
+        count++;
     }
-    return images;
+    std::cout << "EXITED LOOP\nl";
 }
 
 // returns images read from pdf files
-vector<cv::Mat> get_pdf_images(ptv::Config &conf) {
-    int total_pages = 0;
+void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
     auto renderer = poppler::page_renderer();
-    vector<cv::Mat> images = {};
+    poppler::document *pdf = poppler::document::load_from_file(pdf_path);
+    int initial_size = vid_images.size();
 
-    for (size_t i = 0; i < conf.get_pdf_paths().size(); i++) {
-        poppler::document *pdf = poppler::document::load_from_file(conf.get_pdf_paths()[i]);
-        int index = total_pages;
-        total_pages += pdf->pages();
-
-        // required to copy pdf data into vector
-        for (int j = 0; j < pdf->pages(); j++) {
-            images.emplace_back(cv::Mat(100, 100, CV_8UC3, cv::Scalar(0, 0, 0)));
-        }
-
-        // Gets pages of individual pdf files
-        for (int pg = 0; index < total_pages; index++, pg++) {
-            float dpi = DEFAULT_DPI;
-            poppler::page *page = pdf->create_page(pg);
-
-            // If -r 0x0, adjusts resolution to fit first page
-            if (index == 0) {
-                poppler::rectf rect = page->page_rect(poppler::media_box);
-                conf.set_resolution(rect);
-            }
-
-            // Scales pages to correctly fit inside video resolution.
-            if (conf.get_style()== FRAMES) {
-                dpi = get_scaled_dpi_to_fit(page, conf);
-            } else {
-                dpi = get_scaled_dpi_from_width(page, conf.get_width());
-            }
-
-            poppler::image img = renderer.render_page(page, dpi, dpi);
-            cv::Mat mat;
-            // Determine the color space
-            if (img.data() == nullptr) {
-                std::cerr << "<!> Error: Page " << pg << " has no data to load. Skipped." << std::endl;
-                images.erase(images.begin() + index);
-                continue;
-            } else if (img.format() == poppler::image::format_invalid) {
-                std::cerr << "<!> Error: Page " << pg << " has invalid image format. Skipped." << std::endl;
-                images.erase(images.begin() + index);
-                continue;
-            } else if (img.format() == poppler::image::format_gray8) {
-                cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC1, img.data(), img.bytes_per_row());
-                cv::cvtColor(tmp, mat, cv::COLOR_GRAY2RGB);
-            } else if (img.format() == poppler::image::format_rgb24) {
-                mat = cv::Mat(img.height(), img.width(), CV_8UC3, img.data(), img.bytes_per_row());
-            } else if (img.format() == poppler::image::format_bgr24) {
-                cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC3, img.data(), img.bytes_per_row());
-                cv::cvtColor(tmp, mat, cv::COLOR_BGR2RGB);
-            } else if (img.format() == poppler::image::format_argb32) {
-                cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC4, img.data(), img.bytes_per_row());
-                cv::cvtColor(tmp, mat, cv::COLOR_RGBA2RGB);
-            }
-            mat.copyTo(images[index]);
-        }
+    // Required to copy pdf data into vector
+    for (int i = 0; i < pdf->pages(); i++) {
+        vid_images.emplace_back(cv::Mat(10, 10, CV_8UC3, cv::Scalar(0, 0, 0)));
     }
-    return images;
+
+    // Gets pages of individual pdf files
+    for (int pg = 0; pg < pdf->pages(); pg++) {
+        float dpi = DEFAULT_DPI;
+        poppler::page *page = pdf->create_page(pg);
+
+        // Scales pages to correctly fit inside video resolution.
+        if (conf.get_style()== FRAMES) {
+            dpi = get_scaled_dpi_to_fit(page, conf);
+        } else {
+            dpi = get_scaled_dpi_from_width(page, conf.get_width());
+        }
+
+        poppler::image img = renderer.render_page(page, dpi, dpi);
+        cv::Mat mat;
+        // Determine the color space
+        if (img.data() == nullptr) {
+            std::cerr << "<!> Error: Page " << pg << " has no data to load. Skipped." << std::endl;
+            vid_images.erase(vid_images.begin() + pg);
+            continue;
+        } else if (img.format() == poppler::image::format_invalid) {
+            std::cerr << "<!> Error: Page " << pg << " has invalid image format. Skipped." << std::endl;
+            vid_images.erase(vid_images.begin() + pg);
+            continue;
+        } else if (img.format() == poppler::image::format_gray8) {
+            cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC1, img.data(), img.bytes_per_row());
+            cv::cvtColor(tmp, mat, cv::COLOR_GRAY2RGB);
+        } else if (img.format() == poppler::image::format_rgb24) {
+            mat = cv::Mat(img.height(), img.width(), CV_8UC3, img.data(), img.bytes_per_row());
+        } else if (img.format() == poppler::image::format_bgr24) {
+            cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC3, img.data(), img.bytes_per_row());
+            cv::cvtColor(tmp, mat, cv::COLOR_BGR2RGB);
+        } else if (img.format() == poppler::image::format_argb32) {
+            cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC4, img.data(), img.bytes_per_row());
+            cv::cvtColor(tmp, mat, cv::COLOR_RGBA2RGB);
+        }
+        mat.copyTo(vid_images[pg + initial_size]);
+    }
 }
 
 // scroll effect
@@ -341,7 +336,7 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv
 }
 
 // classic image sequence effect
-void generate_sequence_video(cv::VideoWriter &vid, vector<cv::Mat> &imgs, ptv::Config &conf) {
+void generate_sequence_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf) {
     for (size_t i = 0; i < imgs.size(); i ++) {
         cv::Mat img = imgs[i];
         cv::Mat vp_img = cv::Mat(conf.get_height(), conf.get_width(), img.type(), cv::Scalar(0, 0, 0));

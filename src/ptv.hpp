@@ -43,8 +43,8 @@ class Config {
     std::string style_ = FRAMES;
     std::string output_ = "";
     std::string format_ = ".mp4";
-    std::vector<std::string> pdf_paths_ = {};
-    std::vector<std::string> seq_dirs_ = {};
+    std::vector<std::string> input_paths_ = {};
+    std::vector<std::string> input_types_ = {};
 
     public:
         Config(int argc, char **argv) {
@@ -60,12 +60,6 @@ class Config {
                     std::cout << HELP_TXT << std::endl;
                     exit(1);
                 } else if ((int)arg.find(".pdf") > -1) {
-                    if (is_seq_) {
-                        std::cerr << "<!> Error: Cannot convert Image Sequence and PDF at the same time." << std::endl;
-                        exit(1);
-                    } else {
-                        is_pdf_ = true;
-                    }
                     if (!std::filesystem::exists(arg)) {
                         std::cerr << "<!> Error: '" << arg << "' does not exist." << std::endl;
                         exit(1);
@@ -74,14 +68,9 @@ class Config {
                         std::cout << "<!> Error: '" << arg << "' is not a PDF file." << std::endl;
                         exit(1);
                     }
-                    pdf_paths_.push_back(arg);
+                    input_paths_.push_back(arg);
+                    input_types_.push_back("pdf");
                 } else if ((int)arg.find('/') > -1) {
-                    if (is_pdf_) {
-                        std::cerr << "<!> Error: Cannot convert PDF and Image Sequence at the same time." << std::endl;
-                        exit(1);
-                    } else {
-                        is_seq_ = true;
-                    }
                     if (!std::filesystem::is_directory(arg)) {
                         std::cerr << "<!> Error: '" << arg <<  "' is not a valid directory." << std::endl;
                         exit(1);
@@ -89,7 +78,8 @@ class Config {
                     if (arg[arg.length() - 1] != '/') {
                         arg.push_back('/');
                     }
-                    seq_dirs_.push_back(arg);
+                    input_paths_.push_back(arg);
+                    input_types_.push_back("dir");
                 } else if (arg == "-r") {
                     i++;
                     std::string currArg = std::string(argv[i]);
@@ -148,37 +138,30 @@ class Config {
                 }
             }
 
-            if (pdf_paths_.size() < 1 && seq_dirs_.size() < 1) {
-                std::cerr << "<!> No pdf path or image sequence director was specified." << std::endl;
+            if (input_paths_.size() == 0) {
+                std::cerr << "<!> No input path was specified." << std::endl;
                 exit(1);
             }
 
-            // Print Current Settings
-            if (is_pdf_) {
-                std::cout << "PDF Paths (" << pdf_paths_.size() << "): ";
-                for (size_t i = 0; i < pdf_paths_.size(); i++) {
-                    if (i > 0) {
-                        std::cout << " + ";
-                    }
-                    std::cout << "" + pdf_paths_[i];
+            // Print Settings
+            if (input_paths_.size() > 1) {
+                std::cout << "(" << input_paths_.size() << ") Inputs: ";
+            } else {
+                std::cout << "(" << input_paths_.size() << ") Input: ";
+            }
+            for (size_t i = 0; i < input_paths_.size(); i++) {
+                if (i > 0) {
+                    std::cout << " + ";
                 }
-            } else if (is_seq_) {
-                std::cout << "Sequence Directories (" << seq_dirs_.size() << "): ";
-                for (size_t i = 0; i < seq_dirs_.size(); i++) {
-                    if (i > 0) {
-                        std::cout << " + ";
-                    }
-                    std::cout << "" + seq_dirs_[i];
-                }
+                std::cout << "" + input_paths_[i];
             }
             std::cout << std::endl;
-
-            if (output_ == "" && is_seq_) {
-                std::string path = seq_dirs_[0];
-                output_ = path.substr(0, path.find_last_of('/')) + format_;
-            } else if (output_ == "" && is_pdf_) {
-                std::string path = pdf_paths_[0];
+            if (output_ == "" && input_types_[0] == "pdf") {
+                std::string path = input_paths_[0];
                 output_ = path.substr(0, path.find_last_of('.')) + format_;
+            } else if (output_ == "" && input_types_[0] == "dir") {
+                std::string path = input_paths_[0];
+                output_ = path.substr(0, path.find_last_of('/')) + format_;
             }
             std::cout << "Output: " << output_ << std::endl;
             std::cout << "Resolution: " << width_ << "x" << height_ << std::endl;
@@ -229,8 +212,8 @@ class Config {
         std::string get_style() { return style_; }
         std::string get_output() { return output_; }
         std::string get_format() { return format_; }
-        std::vector<std::string> get_pdf_paths() { return pdf_paths_; }
-        std::vector<std::string> get_seq_dirs() { return seq_dirs_; }
+        std::vector<std::string> get_input_paths() { return input_paths_; }
+        std::vector<std::string> get_input_types() { return input_types_; }
 
         // Setters
         void set_width(int w) { width_ = w % 2 == 0 ? w : w + 1; }

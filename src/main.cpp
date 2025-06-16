@@ -1,6 +1,5 @@
 #include "opencv.hpp"
 #include "opencv2/core.hpp"
-#include "opencv2/core/operations.hpp"
 #include "poppler.hpp"
 #include "ptv.hpp"
 #include <cmath>
@@ -76,12 +75,12 @@ int main(int argc, char **argv) {
 
     // Finish Video
     video.release();
+    std::cout << "Finished Generating Video!" << std::endl;
 
     // Clean Up
     for (auto &img : images) {
         img.release();
     }
-    std::cout << "Finished generating video!" << std::endl;
 
     // Time
     size_t duration = difftime(time(NULL), start_time);
@@ -123,7 +122,7 @@ void scale_image_to_fit(cv::Mat &img, ptv::Config &conf) {
     cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_LINEAR);
 }
 
-// returns dpi to scale page to viewport width
+// Returns dpi to scale page to viewport width
 float get_scaled_dpi_from_width(poppler::page *page, int width) {
     auto rect = page->page_rect(poppler::media_box);
     if (rect.width() == width) {
@@ -132,7 +131,7 @@ float get_scaled_dpi_from_width(poppler::page *page, int width) {
     return ((float)width * DEFAULT_DPI) / (float)rect.width();
 }
 
-// returns dpi that will scale the pdf page to fit the viewport dimentions
+// Returns dpi that will scale the pdf page to fit the viewport dimentions
 float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf) {
     float dpi_w;
     float dpi_h;
@@ -180,7 +179,7 @@ std::map<int, std::string> get_dir_entry_map(std::string dir_path) {
     return image_map;
 }
 
-// returns images read from image sequence directory
+// Returns images read from image sequence directory
 void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
     std::map<int, std::string> entry_map = get_dir_entry_map(dir_path);
 
@@ -205,7 +204,7 @@ void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv:
     }
 }
 
-// returns images read from pdf files
+// Returns images read from pdf files
 void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
     auto renderer = poppler::page_renderer();
     poppler::document *pdf = poppler::document::load_from_file(pdf_path);
@@ -249,7 +248,7 @@ void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv:
     }
 }
 
-// scroll effect
+// Scroll effect
 void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf) {
     float px_per_frame = 0.0f;
     float h = 0.0f;
@@ -285,7 +284,7 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv
         }
 
         // Logic to readjust the translation of video frames
-        float unused_height = dst_img.rows - (h + conf.get_height()); // height not yet rendered in vp.
+        float unused_height = dst_img.rows - (h + conf.get_height()); // Height not yet rendered in vp.
         float new_dst_h = conf.get_height() + unused_height + imgs[i].rows;
         cv::Mat new_dst_img;
         if ((imgs.size() - 2) == i) { // allows video to scroll to black at end
@@ -311,7 +310,7 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv
     std::cout << imgs.size() << "/" << imgs.size() << std::endl;
 }
 
-// classic image sequence effect
+// Classic image sequence effect
 void generate_sequence_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf) {
     for (size_t i = 0; i < imgs.size(); i ++) {
         cv::Mat img = imgs[i];
@@ -319,15 +318,15 @@ void generate_sequence_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, p
         int x = 0;
         int y = 0;
 
-        // adds offset
+        // Adds offset
         if (vp_img.cols - img.cols >= 2) {
             x += (vp_img.cols - img.cols) / 2;
         } else if (vp_img.rows - img.rows >= 2) {
             y += (vp_img.rows - img.rows) / 2;
         }
 
-        // prevents stretching of images when being rendered.
-        // keeps them within the vp.
+        // Prevents stretching of images when being rendered.
+        // Keeps them within the vp.
         cv::Rect2i roi(x, y, img.cols, img.rows);
         img.copyTo(vp_img(roi));
         vid.write(vp_img);

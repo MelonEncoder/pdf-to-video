@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
     // Start timer after accepting settings
     time_t start_time = time(NULL);
 
-    // == FIGURE OUT CONDITION FOR -r 0x0 ==
+    // == FIGURE OUT CONDITION FOR NATIVE RESOLUTION (-r 0x0) ==
     //
     // If -r 0x0, adjusts resolution to fit first page
     // if (pg == 0) {
@@ -61,7 +61,6 @@ int main(int argc, char **argv) {
         } else if (types[i] == "dir") {
             add_dir_images(paths[i], images, conf);
         }
-        std::cout << "INPUT: " << i << std::endl;
     }
 
     std::cout << "Initializing Video Renderer..." << std::endl;
@@ -110,17 +109,14 @@ void scale_image_to_fit(cv::Mat &img, ptv::Config &conf) {
         scale_w = (float)conf.get_width() / (float)img.cols;
         scale_h = (float)conf.get_height() / (float)img.rows;
         scale = std::min(scale_w, scale_h);
-    }
-    if (img.cols < conf.get_width() && img.rows < conf.get_height()) {
+    } else if (img.cols < conf.get_width() && img.rows < conf.get_height()) {
         scale_w = (float)conf.get_width() / (float)img.cols;
         scale_h = (float)conf.get_height() / (float)img.rows;
         scale = std::min(scale_w, scale_h);
-    }
-    if (img.cols > conf.get_width() && img.rows <= conf.get_height()) {
+    } else if (img.cols > conf.get_width() && img.rows <= conf.get_height()) {
         scale_w = (float)conf.get_width() / (float)img.cols;
         scale = scale_w;
-    }
-    if (img.cols <= conf.get_width() && img.rows > conf.get_height()) {
+    } else if (img.cols <= conf.get_width() && img.rows > conf.get_height()) {
         scale_h = (float)conf.get_height() / (float)img.rows;
         scale = scale_h;
     }
@@ -145,17 +141,14 @@ float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf) {
         dpi_w = ((float)conf.get_width() * DEFAULT_DPI) / rect.width();
         dpi_h = ((float)conf.get_height() * DEFAULT_DPI) / rect.height();
         return std::min(dpi_w, dpi_h);
-    }
-    if (rect.width() < conf.get_width() && rect.height() < conf.get_height()) {
+    } else if (rect.width() < conf.get_width() && rect.height() < conf.get_height()) {
         dpi_w = ((float)conf.get_width() * DEFAULT_DPI) / rect.width();
         dpi_h = ((float)conf.get_height() * DEFAULT_DPI) / rect.height();
         return std::min(dpi_w, dpi_h);
-    }
-    if (rect.width() > conf.get_width() && rect.height() <= conf.get_height()) {
+    } else if (rect.width() > conf.get_width() && rect.height() <= conf.get_height()) {
         dpi_w = ((float)conf.get_width() * DEFAULT_DPI) / rect.width();
         return dpi_w;
-    }
-    if (rect.width() <= conf.get_width() && rect.height() > conf.get_height()) {
+    } else if (rect.width() <= conf.get_width() && rect.height() > conf.get_height()) {
         dpi_h = ((float)conf.get_height() * DEFAULT_DPI) / rect.height();
         return dpi_h;
     }
@@ -191,8 +184,6 @@ std::map<int, std::string> get_dir_entry_map(std::string dir_path) {
 void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
     std::map<int, std::string> entry_map = get_dir_entry_map(dir_path);
 
-    std::cout << "Finished Mapping\n";
-
     // Reads images in numerical order
     size_t count = 0;
     size_t map_size = entry_map.size();
@@ -209,30 +200,15 @@ void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv:
             scale_image_to_width(mat, conf.get_width());
         }
 
-        // Makes dimentions of the image divisible by 2.
-        // ffmpeg will get upset if otherwise.
-        int rows = mat.rows % 2 != 0 ? mat.rows + 1 : mat.rows;
-        int cols = mat.cols % 2 != 0 ? mat.cols + 1 : mat.cols;
-        cv::Rect2i roi(0, 0, mat.cols, mat.rows);
-        cv::Mat tmp_mat(rows, cols, CV_8UC3, cv::Scalar(0, 0, 0));
-        mat.copyTo(tmp_mat(roi));
-        vid_images.push_back(cv::Mat(tmp_mat));
-
+        vid_images.push_back(mat);
         count++;
     }
-    std::cout << "EXITED LOOP\nl";
 }
 
 // returns images read from pdf files
 void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
     auto renderer = poppler::page_renderer();
     poppler::document *pdf = poppler::document::load_from_file(pdf_path);
-    int initial_size = vid_images.size();
-
-    // Required to copy pdf data into vector
-    for (int i = 0; i < pdf->pages(); i++) {
-        vid_images.emplace_back(cv::Mat(10, 10, CV_8UC3, cv::Scalar(0, 0, 0)));
-    }
 
     // Gets pages of individual pdf files
     for (int pg = 0; pg < pdf->pages(); pg++) {
@@ -248,7 +224,7 @@ void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv:
 
         poppler::image img = renderer.render_page(page, dpi, dpi);
         cv::Mat mat;
-        // Determine the color space
+        // Determine color space
         if (img.data() == nullptr) {
             std::cerr << "<!> Error: Page " << pg << " has no data to load. Skipped." << std::endl;
             vid_images.erase(vid_images.begin() + pg);
@@ -269,7 +245,7 @@ void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv:
             cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC4, img.data(), img.bytes_per_row());
             cv::cvtColor(tmp, mat, cv::COLOR_RGBA2RGB);
         }
-        mat.copyTo(vid_images[pg + initial_size]);
+        vid_images.push_back(mat);
     }
 }
 

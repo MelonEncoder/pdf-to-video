@@ -167,7 +167,7 @@ std::map<int, std::string> get_dir_entry_map(std::string dir_path) {
             try {
                 index = std::stoi(name.substr(0, name.length() - name.find_last_of('.')));
             } catch (const std::invalid_argument& e) {
-                std::cerr << "<!> Warning: " << name << " skipped. Number not found." << std::endl;
+                std::cerr << "<!> Note: " << name << " skipped. File name is not a number." << std::endl;
                 continue;
             } catch (const std::out_of_range& e) {
                 std::cerr << "<!> Out of Range: geting int value from image name, get_images()." << std::endl;
@@ -189,6 +189,17 @@ void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv:
 
     for (size_t i = 0; count < map_size; i++) {
         if (entry_map[i] == "") {
+            continue;
+        }
+
+        if ((int)entry_map[i].find(".pdf") != -1) {
+            add_pdf_images(entry_map[i], vid_images, conf);
+            count++;
+            continue;
+        }
+
+        if ((int)entry_map[i].find(".gif") != -1) {
+            std::cout << "<!> Note: '" << i << ".gif' skipped. Curretnly unable to render gifs." << std::endl;
             continue;
         }
 

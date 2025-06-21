@@ -186,13 +186,14 @@ void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv:
             continue;
         }
 
+        // Renders .pdf files
         if ((int)entry_map[i].find(".pdf") != -1) {
             add_pdf_images(entry_map[i], vid_images, conf);
             count++;
             continue;
         }
 
-        // Skips GIF files
+        // Renders .gif files
         if ((int)entry_map[i].find(".gif") != -1) {
             if (conf.get_render_gifs()) {
                 add_gif_images(entry_map[i], vid_images, conf);

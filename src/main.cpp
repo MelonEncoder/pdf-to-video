@@ -194,8 +194,11 @@ void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv:
 
         // Skips GIF files
         if ((int)entry_map[i].find(".gif") != -1) {
-            add_gif_images(entry_map[i], vid_images, conf);
-            // std::cout << "Note: '" << i << ".gif' skipped. Curretnly unable to render gifs." << std::endl;
+            if (conf.get_render_gifs()) {
+                add_gif_images(entry_map[i], vid_images, conf);
+            } else {
+                std::cout << "Note: '" << i << ".gif' skipped. Use --gif to render gif files as support is limited." << std::endl;
+            }
             count++;
             continue;
         }

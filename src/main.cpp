@@ -1,13 +1,6 @@
 #include "opencv.hpp"
-#include "opencv2/core.hpp"
 #include "poppler.hpp"
 #include "ptv.hpp"
-#include <cmath>
-#include <iostream>
-#include <string>
-#include <filesystem>
-#include <vector>
-#include <ctime>
 
 namespace fs = std::filesystem;
 
@@ -24,6 +17,7 @@ float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf); // dpi fits
 std::map<int, std::string> get_dir_entry_map(std::string dir_path);
 void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
 void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
+void add_gif_images(std::string gif_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
 
 void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf);
 void generate_sequence_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf);
@@ -198,8 +192,11 @@ void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv:
             continue;
         }
 
+        // Skips GIF files
         if ((int)entry_map[i].find(".gif") != -1) {
-            std::cout << "<!> Note: '" << i << ".gif' skipped. Curretnly unable to render gifs." << std::endl;
+            add_gif_images(entry_map[i], vid_images, conf);
+            // std::cout << "Note: '" << i << ".gif' skipped. Curretnly unable to render gifs." << std::endl;
+            count++;
             continue;
         }
 
@@ -210,8 +207,31 @@ void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv:
             scale_image_to_width(mat, conf.get_width());
         }
 
-        vid_images.push_back(mat);
+        vid_images.push_back(mat.clone());
         count++;
+    }
+}
+
+// !!! NEEDS WORK !!!
+void add_gif_images(std::string gif_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
+
+    cv::VideoCapture cap(gif_path);
+    if (!cap.isOpened()) {
+        std::cerr << "<!> Error: Could not open GIF file." << std::endl;
+        exit(1);
+    }
+
+    cv::Mat frame;
+    while (cap.read(frame)) {
+        if (frame.empty()) break;
+
+        if (conf.get_style() == FRAMES) {
+            scale_image_to_fit(frame, conf);
+        } else {
+            scale_image_to_width(frame, conf.get_width());
+        }
+
+        vid_images.push_back(frame.clone());
     }
 }
 
@@ -236,11 +256,11 @@ void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv:
         cv::Mat mat;
         // Determine color space
         if (img.data() == nullptr) {
-            std::cerr << "<!> Error: Page " << pg << " has no data to load. Skipped." << std::endl;
+            std::cerr << "<!> Page " << pg << " has no data to load. Skipped." << std::endl;
             vid_images.erase(vid_images.begin() + pg);
             continue;
         } else if (img.format() == poppler::image::format_invalid) {
-            std::cerr << "<!> Error: Page " << pg << " has invalid image format. Skipped." << std::endl;
+            std::cerr << "<!> Page " << pg << " has invalid image format. Skipped." << std::endl;
             vid_images.erase(vid_images.begin() + pg);
             continue;
         } else if (img.format() == poppler::image::format_gray8) {
@@ -255,7 +275,7 @@ void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv:
             cv::Mat tmp = cv::Mat(img.height(), img.width(), CV_8UC4, img.data(), img.bytes_per_row());
             cv::cvtColor(tmp, mat, cv::COLOR_RGBA2RGB);
         }
-        vid_images.push_back(mat);
+        vid_images.push_back(mat.clone());
     }
 }
 
@@ -263,20 +283,32 @@ void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv:
 void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf) {
     float px_per_frame = 0.0f;
     float h = 0.0f;
-    cv::Mat dst_img(conf.get_height() + imgs[0].rows, conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0)); // Black Box (Video dimentions) + First image
+    cv::Mat dst_img(conf.get_height() + imgs[0].rows, conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0)); // Black Box ( 2x video height by 1x video width )
     cv::Mat vp_img(conf.get_height(), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
     cv::Rect2d roi(0, conf.get_height(), imgs[0].cols, imgs[0].rows);
     imgs[0].copyTo(dst_img(roi));
 
     // Find px_per_frame
-    int height_of_imgs = 0;
-    for (size_t i = 0; i < imgs.size(); i++) {
-        height_of_imgs += imgs[i].size().height;
-    }
-    if (conf.get_duration() == 0) {
-        px_per_frame += height_of_imgs / (conf.get_fps() * conf.get_spp() * imgs.size());
-    } else {
-        px_per_frame = height_of_imgs / (conf.get_fps() * conf.get_duration());
+    if (conf.get_style() == UP || conf.get_style() == DOWN) {
+        int height_of_imgs = 0;
+        for (size_t i = 0; i < imgs.size(); i++) {
+            height_of_imgs += imgs[i].size().height;
+        }
+        if (conf.get_duration() == 0) {
+            px_per_frame += height_of_imgs / (conf.get_fps() * conf.get_spp() * imgs.size());
+        } else {
+            px_per_frame = height_of_imgs / (conf.get_fps() * conf.get_duration());
+        }
+    } else if (conf.get_style() == LEFT || conf.get_style() == RIGHT) {
+        int width_of_imgs = 0;
+        for (size_t i = 0; i < imgs.size(); i++) {
+            width_of_imgs += imgs[i].size().width;
+        }
+        if (conf.get_duration() == 0) {
+            px_per_frame += width_of_imgs / (conf.get_fps() * conf.get_spp() * imgs.size());
+        } else {
+            px_per_frame = width_of_imgs / (conf.get_fps() * conf.get_duration());
+        }
     }
     if (px_per_frame <= 0.0f) {
         px_per_frame = 1.0f;
@@ -303,17 +335,13 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv
         } else {
             new_dst_img = cv::Mat(std::ceil(new_dst_h), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
         }
-        try {
-            cv::Rect2d tmp_ROI(0.0, h, conf.get_width(), unused_height + conf.get_height());
-            cv::Rect2d dst_ROI(0.0, 0.0, conf.get_width(), unused_height + conf.get_height());
-            dst_img(tmp_ROI).copyTo(new_dst_img(dst_ROI));
-            cv::Rect2d next_ROI(0.0, unused_height + conf.get_height(), conf.get_width(), imgs[i].rows);
-            imgs[i].copyTo(new_dst_img(next_ROI));
-            dst_img = new_dst_img;
-            h = 0.0;
-        } catch (cv::Exception e) {
-            std::cerr << "<!> Exception: " << e.msg << "\nLine: " << e.line << std::endl;
-        }
+        cv::Rect2d tmp_ROI(0.0, h, conf.get_width(), unused_height + conf.get_height());
+        cv::Rect2d dst_ROI(0.0, 0.0, conf.get_width(), unused_height + conf.get_height());
+        dst_img(tmp_ROI).copyTo(new_dst_img(dst_ROI));
+        cv::Rect2d next_ROI(0.0, unused_height + conf.get_height(), conf.get_width(), imgs[i].rows);
+        imgs[i].copyTo(new_dst_img(next_ROI));
+        dst_img = new_dst_img;
+        h = 0.0;
 
         // Finished Rendering Current Image
         std::cout << i << "/" << imgs.size() << std::endl;

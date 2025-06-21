@@ -166,9 +166,9 @@ class Config {
             std::cout << "Output: " << output_ << std::endl;
             std::cout << "Resolution: " << width_ << "x" << height_ << std::endl;
             std::cout << "FPS: " << fps_ << std::endl;
-            if (duration_ != 0 && style_ == UP) {
+            if (duration_ != 0 && style_ != FRAMES) {
                 std::cout << "Duration: " << duration_ << "s" << std::endl;
-            } else if (style_ == UP) {
+            } else if (style_ != FRAMES) {
                 std::cout << "SPP: " << spp_ << std::endl;
             }
             std::cout << "Animated: " << style_ << std::endl;

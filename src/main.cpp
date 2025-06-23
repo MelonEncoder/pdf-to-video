@@ -1,6 +1,10 @@
 #include "opencv.hpp"
 #include "poppler.hpp"
 #include "ptv.hpp"
+#include <algorithm>
+#include <array>
+#include <cstdlib>
+#include <type_traits>
 
 namespace fs = std::filesystem;
 
@@ -14,7 +18,7 @@ void scale_image_to_fit(cv::Mat& img, ptv::Config &conf);
 float get_scaled_dpi_from_width(poppler::page *page, int width); // dpi fits page to vp width
 float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf); // dpi fits page in viewport
 
-std::map<int, std::string> get_dir_entry_map(std::string dir_path);
+std::vector<std::string> get_dir_img_paths(std::string dir_path);
 void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
 void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
 void add_gif_images(std::string gif_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
@@ -149,62 +153,70 @@ float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf) {
 }
 
 // Returns paths of each file in the directory, excludes nested directories.
-std::map<int, std::string> get_dir_entry_map(std::string dir_path) {
+std::vector<std::string> get_dir_img_paths(std::string dir_path) {
     std::map<int, std::string> image_map;
+    std::vector<int> file_nums;
+    std::vector<std::string> image_paths;
 
-    // Creates hash-map of valid image paths in numerical order
+    // Creates hash-map of valid image paths
     for (const auto &entry : fs::directory_iterator(dir_path)) {
         if (!fs::is_directory(entry)) {
-            int index;
+            int key;
             std::string path = entry.path().string();
             std::string name = entry.path().filename().string();
             try {
-                index = std::stoi(name.substr(0, name.length() - name.find_last_of('.')));
+                key = std::stoi(name.substr(0, name.length() - name.find_last_of('.')));
             } catch (const std::invalid_argument& e) {
                 std::cerr << "<!> Note: " << name << " skipped. File name is not a number." << std::endl;
                 continue;
             } catch (const std::out_of_range& e) {
-                std::cerr << "<!> Out of Range: geting int value from image name, get_images()." << std::endl;
+                std::cerr << "<!> Out of Range: getting int value from image name, get_images()." << std::endl;
                 continue;
             }
-            image_map.insert(std::make_pair(index, path));
+            image_map.insert(std::make_pair(key, path));
+            file_nums.push_back(key);
         }
     }
-    return image_map;
+
+    // Numerically sorts each image path into a vector.
+    std::sort(file_nums.begin(), file_nums.end());
+    for (int num : file_nums) {
+        image_paths.push_back(image_map[num]);
+    }
+
+    return image_paths;
 }
 
 // Returns images read from image sequence directory
 void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
-    std::map<int, std::string> entry_map = get_dir_entry_map(dir_path);
+    std::vector<std::string> img_paths = get_dir_img_paths(dir_path);
 
     // Reads images in numerical order
     size_t count = 0;
-    size_t map_size = entry_map.size();
-
-    for (size_t i = 0; count < map_size; i++) {
-        if (entry_map[i] == "") {
-            continue;
-        }
-
+    size_t size = img_paths.size();
+    size_t i = conf.get_is_reverse() ? size - 1 : 0;
+    while (count < size) {
         // Renders .pdf files
-        if ((int)entry_map[i].find(".pdf") != -1) {
-            add_pdf_images(entry_map[i], vid_images, conf);
+        if ((int)img_paths[i].find(".pdf") != -1) {
+            add_pdf_images(img_paths[i], vid_images, conf);
             count++;
+            i += conf.get_is_reverse() ? -1 : 1;
             continue;
         }
 
         // Renders .gif files
-        if ((int)entry_map[i].find(".gif") != -1) {
+        if ((int)img_paths[i].find(".gif") != -1) {
             if (conf.get_render_gifs()) {
-                add_gif_images(entry_map[i], vid_images, conf);
+                add_gif_images(img_paths[i], vid_images, conf);
             } else {
-                std::cout << "Note: '" << i << ".gif' skipped. Use --gif to render gif files as support is limited." << std::endl;
+                std::cout << "Note: '" << img_paths[i] << "' skipped. Use --gif to render gif files as support is limited." << std::endl;
             }
             count++;
+            i += conf.get_is_reverse() ? -1 : 1;
             continue;
         }
 
-        cv::Mat mat = cv::imread(entry_map[i]);
+        cv::Mat mat = cv::imread(img_paths[i]);
         if (conf.get_style() == FRAMES) {
             scale_image_to_fit(mat, conf);
         } else {
@@ -213,6 +225,7 @@ void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv:
 
         vid_images.push_back(mat.clone());
         count++;
+        i += conf.get_is_reverse() ? -1 : 1;
     }
 }
 

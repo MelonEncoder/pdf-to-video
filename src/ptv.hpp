@@ -24,6 +24,7 @@ Application Options: \n\
    -o [output_path]                       :  currently only support .mp4 files, leave blank for auto output\n\
    -a [Up|Down|Left|Right]                :  scrolls content instead of making each page a frame (like a slideshow).\n\
    --gif                                  :  render .gif files in image sequences\n\
+   --reverse-seq                          :  load numbered imgs from dir in decending order, larger # to smaller #\n\
 "
 #define FRAMES "Frames"
 #define UP "Up"
@@ -35,6 +36,7 @@ Application Options: \n\
 
 class Config {
     bool render_gifs_ = false;
+    bool is_reverse_ = false;
     int width_ = 1280;
     int height_ = 720;
     float fps_ = 1;
@@ -134,12 +136,15 @@ class Config {
                     style_ = a;
                 } else if (arg == "--gif") {
                     render_gifs_ = true;
+                } else if (arg == "--reverse-seq") {
+                    is_reverse_ = true;
                 } else {
                     std::cerr << "<!> Unknown argument detected: " << argv[i] << std::endl;
                     exit(1);
                 }
             }
 
+            // Check input
             if (input_paths_.size() == 0) {
                 std::cerr << "<!> No input path was specified." << std::endl;
                 exit(1);
@@ -205,6 +210,7 @@ class Config {
 
         // Getters
         bool get_render_gifs() { return render_gifs_; }
+        bool get_is_reverse() { return is_reverse_; }
         int get_width() { return width_; }
         int get_height() { return height_; }
         float get_fps() { return fps_; }

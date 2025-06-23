@@ -2,9 +2,6 @@
 #include "poppler.hpp"
 #include "ptv.hpp"
 #include <algorithm>
-#include <array>
-#include <cstdlib>
-#include <type_traits>
 
 namespace fs = std::filesystem;
 

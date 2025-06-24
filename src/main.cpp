@@ -1,4 +1,5 @@
 #include "opencv.hpp"
+#include "opencv2/imgcodecs.hpp"
 #include "poppler.hpp"
 #include "ptv.hpp"
 #include <algorithm>
@@ -9,19 +10,27 @@ namespace fs = std::filesystem;
 // Headers //
 // ======= //
 
-void scale_image_to_width(cv::Mat &img, int dst_width);
+void scale_image_to_width(cv::Mat &img, const int dst_width);
+void scale_image_to_height(cv::Mat &img, const int dst_height);
 void scale_image_to_fit(cv::Mat& img, ptv::Config &conf);
+void scale_image(cv::Mat &img, ptv::Config &conf);
 
-float get_scaled_dpi_from_width(poppler::page *page, int width); // dpi fits page to vp width
-float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf); // dpi fits page in viewport
+float get_scaled_dpi_from_width(const poppler::page *page, const int width); // dpi fits page width to vp width
+float get_scaled_dpi_from_height(const poppler::page *page, const int height); // dpi fits page height to vp height
+float get_scaled_dpi_to_fit(poppler::page *page, ptv::Config &conf); // dpi fits entire page in viewport
 
 std::vector<std::string> get_dir_img_paths(std::string dir_path);
-void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
-void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
-void add_gif_images(std::string gif_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
+void add_dir_images(const std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
+void add_pdf_images(const std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
+void add_gif_images(const std::string gif_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf);
 
-void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf);
-void generate_sequence_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf);
+void generate_video_sequence(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, ptv::Config &conf);
+
+float get_pixels_per_frame(const std::vector<cv::Mat> &imgs, ptv::Config &conf);
+void generate_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, ptv::Config &conf);
+// void generate_video_scroll_down(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, ptv::Config &conf);
+void generate_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, ptv::Config &conf);
+// void generate_video_scroll_right(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, ptv::Config &conf);
 
 // ============= //
 // Main Function //
@@ -63,9 +72,15 @@ int main(int argc, char **argv) {
 
     std::cout << "Generating Video..." << std::endl;
     if (conf.get_style() == FRAMES) {
-        generate_sequence_video(video, images, conf);
-    } else {
-        generate_scroll_video(video, images, conf); // TODO: Add scroll Down, Left, and Right
+        generate_video_sequence(video, images, conf);
+    } else if (conf.get_style() == UP ) {
+        generate_video_scroll_up(video, images, conf);
+    } else if (conf.get_style() == DOWN) {
+        // generate_video_scroll_down(video, images, conf);
+    } else if (conf.get_style() == LEFT) {
+        generate_video_scroll_left(video, images, conf);
+    } else if (conf.get_style() == RIGHT) {
+        // generate_video_scroll_right(video, images, conf);
     }
 
     // Finish Video
@@ -90,8 +105,13 @@ int main(int argc, char **argv) {
 // Functions //
 // ========= //
 
-void scale_image_to_width(cv::Mat &img, int dst_width) {
+void scale_image_to_width(cv::Mat &img, const int dst_width) {
     float scale = (float)dst_width / (float)img.cols;
+    cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_LINEAR);
+}
+
+void scale_image_to_height(cv::Mat &img, const int dst_height) {
+    float scale = (float)dst_height / (float)img.rows;
     cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_LINEAR);
 }
 
@@ -117,13 +137,32 @@ void scale_image_to_fit(cv::Mat &img, ptv::Config &conf) {
     cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_LINEAR);
 }
 
+void scale_image(cv::Mat &img, ptv::Config &conf) {
+    if (conf.get_style() == FRAMES) {
+        scale_image_to_fit(img, conf);
+    } else if (conf.get_style() == UP || conf.get_style() == DOWN) {
+        scale_image_to_width(img, conf.get_width());
+    } else if (conf.get_style() == LEFT || conf.get_style() == RIGHT) {
+        scale_image_to_height(img, conf.get_height());
+    }
+}
+
 // Returns dpi to scale page to viewport width
-float get_scaled_dpi_from_width(poppler::page *page, int width) {
+float get_scaled_dpi_from_width(const poppler::page *page, const int width) {
     auto rect = page->page_rect(poppler::media_box);
     if (rect.width() == width) {
         return DEFAULT_DPI;
     }
     return ((float)width * DEFAULT_DPI) / (float)rect.width();
+}
+
+// Returns dpi to scale page to viewport width
+float get_scaled_dpi_from_height(const poppler::page *page, const int height) {
+    auto rect = page->page_rect(poppler::media_box);
+    if (rect.height() == height) {
+        return DEFAULT_DPI;
+    }
+    return ((float)height * DEFAULT_DPI) / (float)rect.height();
 }
 
 // Returns dpi that will scale the pdf page to fit the viewport dimentions
@@ -185,7 +224,7 @@ std::vector<std::string> get_dir_img_paths(std::string dir_path) {
 }
 
 // Returns images read from image sequence directory
-void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
+void add_dir_images(const std::string dir_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
     std::vector<std::string> img_paths = get_dir_img_paths(dir_path);
 
     // Reads images in numerical order
@@ -214,43 +253,33 @@ void add_dir_images(std::string dir_path, std::vector<cv::Mat> &vid_images, ptv:
         }
 
         cv::Mat mat = cv::imread(img_paths[i]);
-        if (conf.get_style() == FRAMES) {
-            scale_image_to_fit(mat, conf);
-        } else {
-            scale_image_to_width(mat, conf.get_width());
-        }
-
+        scale_image(mat, conf);
         vid_images.push_back(mat.clone());
         count++;
         i += conf.get_is_reverse() ? -1 : 1;
     }
 }
 
-// !!! NEEDS WORK !!!
-void add_gif_images(std::string gif_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
-
+// !!! Needs more control over fps and such !!!
+// Adds each frame from the .gif file to the image vector.
+void add_gif_images(const std::string gif_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
     cv::VideoCapture cap(gif_path);
     if (!cap.isOpened()) {
         std::cerr << "<!> Error: Could not open GIF file." << std::endl;
         exit(1);
     }
-
     cv::Mat frame;
     while (cap.read(frame)) {
-        if (frame.empty()) break;
-
-        if (conf.get_style() == FRAMES) {
-            scale_image_to_fit(frame, conf);
-        } else {
-            scale_image_to_width(frame, conf.get_width());
+        if (frame.empty()) {
+            break;
         }
-
+        scale_image(frame, conf);
         vid_images.push_back(frame.clone());
     }
 }
 
 // Returns images read from pdf files
-void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
+void add_pdf_images(const std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv::Config &conf) {
     auto renderer = poppler::page_renderer();
     poppler::document *pdf = poppler::document::load_from_file(pdf_path);
 
@@ -262,8 +291,10 @@ void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv:
         // Scales pages to correctly fit inside video resolution.
         if (conf.get_style()== FRAMES) {
             dpi = get_scaled_dpi_to_fit(page, conf);
-        } else {
+        } else if (conf.get_style() == UP || conf.get_style() == DOWN) {
             dpi = get_scaled_dpi_from_width(page, conf.get_width());
+        } else if (conf.get_style() == LEFT || conf.get_style() == RIGHT) {
+            dpi = get_scaled_dpi_from_height(page, conf.get_height());
         }
 
         poppler::image img = renderer.render_page(page, dpi, dpi);
@@ -293,16 +324,33 @@ void add_pdf_images(std::string pdf_path, std::vector<cv::Mat> &vid_images, ptv:
     }
 }
 
-// Scroll effect
-void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf) {
-    float px_per_frame = 0.0f;
-    float h = 0.0f;
-    cv::Mat dst_img(conf.get_height() + imgs[0].rows, conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0)); // Black Box ( 2x video height by 1x video width )
-    cv::Mat vp_img(conf.get_height(), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
-    cv::Rect2d roi(0, conf.get_height(), imgs[0].cols, imgs[0].rows);
-    imgs[0].copyTo(dst_img(roi));
+// Classic image sequence effect
+void generate_video_sequence(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, ptv::Config &conf) {
+    for (size_t i = 0; i < imgs.size(); i ++) {
+        cv::Mat img = imgs[i];
+        cv::Mat vp_img = cv::Mat(conf.get_height(), conf.get_width(), img.type(), cv::Scalar(0, 0, 0));
+        int x = 0;
+        int y = 0;
 
+        // Adds offset
+        if (vp_img.cols - img.cols >= 2) {
+            x += (vp_img.cols - img.cols) / 2;
+        } else if (vp_img.rows - img.rows >= 2) {
+            y += (vp_img.rows - img.rows) / 2;
+        }
+
+        // Prevents stretching of images when being rendered.
+        // Keeps them within the vp.
+        cv::Rect2i roi(x, y, img.cols, img.rows);
+        img.copyTo(vp_img(roi));
+        vid.write(vp_img);
+    }
+}
+
+float get_pixels_per_frame(const std::vector<cv::Mat> &imgs, ptv::Config &conf) {
     // Find px_per_frame
+    float px_per_frame = 1.0;
+
     if (conf.get_style() == UP || conf.get_style() == DOWN) {
         int height_of_imgs = 0;
         for (size_t i = 0; i < imgs.size(); i++) {
@@ -330,32 +378,46 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv
     }
     std::cout << "Pixels per frame: " << px_per_frame << std::endl;
 
-    //
+    return px_per_frame;
+}
+
+// Scroll effect
+void generate_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, ptv::Config &conf) {
+    float px_per_frame = get_pixels_per_frame(imgs, conf);
+    float y_pos = 0.0f;
+    cv::Mat dst_img(conf.get_height() + imgs[0].rows, conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0)); // Black Box ( video height + first img height by video width )
+    cv::Mat vp_img(conf.get_height(), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
+
+    // Stores first img outside of viewports ROI
+    cv::Rect2d roi(0, conf.get_height(), imgs[0].cols, imgs[0].rows);
+    imgs[0].copyTo(dst_img(roi));
+
     for (size_t i = 1; i < imgs.size(); i++) {
-        // Generates and writes frames to video file
-        while (((float)dst_img.rows - (h + conf.get_height())) > px_per_frame) {
-            cv::Rect2d roi(0.0f, h, conf.get_width(), conf.get_height());
+        // Generates and writes frames to video file. Prevents creating space between each new img.
+        while (((float)dst_img.rows - (y_pos+ conf.get_height())) > px_per_frame) {
+            cv::Rect2d roi(0.0f, y_pos, conf.get_width(), conf.get_height());
             dst_img(roi).copyTo(vp_img);
             vid.write(vp_img);
-            h += px_per_frame;
+            y_pos += px_per_frame;
         }
 
         // Logic to readjust the translation of video frames
-        float unused_height = dst_img.rows - (h + conf.get_height()); // Height not yet rendered in vp.
+        float unused_height = dst_img.rows - (y_pos + conf.get_height()); // Height not yet rendered in vp.
         float new_dst_h = conf.get_height() + unused_height + imgs[i].rows;
-        cv::Mat new_dst_img;
-        if ((imgs.size() - 2) == i) { // allows video to scroll to black at end
-            new_dst_img = cv::Mat(std::ceil(new_dst_h) + conf.get_height() + px_per_frame, conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
-        } else {
-            new_dst_img = cv::Mat(std::ceil(new_dst_h), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
-        }
-        cv::Rect2d tmp_ROI(0.0, h, conf.get_width(), unused_height + conf.get_height());
-        cv::Rect2d dst_ROI(0.0, 0.0, conf.get_width(), unused_height + conf.get_height());
-        dst_img(tmp_ROI).copyTo(new_dst_img(dst_ROI));
-        cv::Rect2d next_ROI(0.0, unused_height + conf.get_height(), conf.get_width(), imgs[i].rows);
-        imgs[i].copyTo(new_dst_img(next_ROI));
+
+        // Allows video to scoll to black screen at end
+        cv::Mat new_dst_img = (imgs.size() - 2 == i) ?
+            cv::Mat((conf.get_height() + std::ceil(new_dst_h) + px_per_frame), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0))
+            : cv::Mat(std::ceil(new_dst_h), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
+
+        cv::Rect2d dst_roi(0.0f, y_pos, conf.get_width(), (conf.get_height() + unused_height));
+        cv::Rect2d new_dst_roi(0.0f, 0.0f, conf.get_width(), (conf.get_height() + unused_height));
+        cv::Rect2d next_roi(0.0f, (conf.get_height() + unused_height), conf.get_width(), imgs[i].rows);
+
+        dst_img(dst_roi).copyTo(new_dst_img(new_dst_roi));
+        imgs[i].copyTo(new_dst_img(next_roi));
         dst_img = new_dst_img;
-        h = 0.0;
+        y_pos = 0.0f;
 
         // Finished Rendering Current Image
         std::cout << i << "/" << imgs.size() << std::endl;
@@ -363,25 +425,71 @@ void generate_scroll_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv
     std::cout << imgs.size() << "/" << imgs.size() << std::endl;
 }
 
-// Classic image sequence effect
-void generate_sequence_video(cv::VideoWriter &vid, std::vector<cv::Mat> &imgs, ptv::Config &conf) {
-    for (size_t i = 0; i < imgs.size(); i ++) {
-        cv::Mat img = imgs[i];
-        cv::Mat vp_img = cv::Mat(conf.get_height(), conf.get_width(), img.type(), cv::Scalar(0, 0, 0));
-        int x = 0;
-        int y = 0;
+void generate_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, ptv::Config &conf) {
+    float px_per_frame = get_pixels_per_frame(imgs, conf);
+    float x_pos = 0.0f;
+    cv::Mat dst_img(conf.get_height(), (conf.get_width() + imgs[0].cols), CV_8UC3, cv::Scalar(0, 0, 0)); // Contains frame content ( video height by video width + first img width)
+    cv::Mat vp_img(conf.get_height(), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0)); // Frame content gets rendered here
 
-        // Adds offset
-        if (vp_img.cols - img.cols >= 2) {
-            x += (vp_img.cols - img.cols) / 2;
-        } else if (vp_img.rows - img.rows >= 2) {
-            y += (vp_img.rows - img.rows) / 2;
+    // Stores first img just outside of viewport's ROI
+    cv::Rect2d roi(conf.get_width(), 0, imgs[0].cols, imgs[0].rows);
+    imgs[0].copyTo(dst_img(roi));
+
+    // Render frames to video
+    for (size_t i = 1; i < imgs.size(); i++) {
+        while (((float)dst_img.cols - (conf.get_width() + x_pos)) > px_per_frame) {
+            cv::Rect2d roi(x_pos, 0.0f, conf.get_width(), conf.get_height());
+            dst_img(roi).copyTo(vp_img);
+            vid.write(vp_img);
+            x_pos += px_per_frame;
+            cv::imwrite("../test/out/" + std::to_string(i) + "_" + std::to_string(x_pos) + ".jpg", vp_img);
         }
 
-        // Prevents stretching of images when being rendered.
-        // Keeps them within the vp.
-        cv::Rect2i roi(x, y, img.cols, img.rows);
-        img.copyTo(vp_img(roi));
-        vid.write(vp_img);
+        // Logic to readjust the translation of video frames
+        float unused_width = dst_img.cols - (conf.get_width() + x_pos); // Width not yet rendered in vp.
+        float new_dst_w = conf.get_width() + imgs[i].cols + unused_width; // New width to account for unused pixels
+
+        // Allows video to scoll to black screen at end
+        cv::Mat new_dst_img = (imgs.size() - 2 == i) ?
+            cv::Mat(conf.get_height(), (conf.get_width() + std::ceil(new_dst_w) + px_per_frame), CV_8UC3, cv::Scalar(0, 0, 0))
+            : cv::Mat(conf.get_height(), std::ceil(new_dst_w), CV_8UC3, cv::Scalar(0, 0, 0));
+
+
+        cv::Rect2d dst_roi(x_pos, 0.0f, (conf.get_width() + unused_width), conf.get_height());
+        cv::Rect2d new_dst_roi(0.0f, 0.0f, (conf.get_width() + unused_width), conf.get_height());
+        cv::Rect2d next_roi((conf.get_width() + unused_width), 0.0f, imgs[i].cols, conf.get_height());
+
+        // Clamp the widths to prevent floating-point precision issues
+        if (dst_roi.x + dst_roi.width > dst_img.cols) {
+            dst_roi.width = dst_img.cols - dst_roi.x;
+            new_dst_roi.width = dst_roi.width;
+        }
+
+        std::cout << "1\n";
+        std::cout << "x_pos: " << x_pos << std::endl;
+        std::cout << "dst_roi: " << dst_roi.x << "," << dst_roi.y << " " << dst_roi.width << "x" << dst_roi.height << std::endl;
+        std::cout << "new_dst_roi: " << new_dst_roi.x << "," << new_dst_roi.y << " " << new_dst_roi.width << "x" << new_dst_roi.height << std::endl;
+        std::cout << "next_roi: " << next_roi.x << "," << next_roi.y << " " << next_roi.width << "x" << next_roi.height << std::endl;
+        std::cout << "\nnew_dst_img: " << new_dst_img.cols << "x" << new_dst_img.rows << std::endl;
+        std::cout << "dst_img: " << dst_img.cols << "x" << dst_img.rows << std::endl;
+        std::cout << "IMG: " << imgs[i].cols << "x" << imgs[i].rows << std::endl;
+
+
+        if (dst_roi.x >= 0 && dst_roi.y >= 0 && dst_roi.x + dst_roi.width <= dst_img.cols && dst_roi.y + dst_roi.height <= dst_img.rows &&
+            new_dst_roi.x >= 0 && new_dst_roi.y >= 0 && new_dst_roi.x + new_dst_roi.width <= new_dst_img.cols && new_dst_roi.y + new_dst_roi.height <= new_dst_img.rows) {
+            dst_img(dst_roi).copyTo(new_dst_img(new_dst_roi));
+        } else {
+            std::cout << "ERROR: ROI bounds violation detected, skipping copy operation" << std::endl;
+        }
+
+        std::cout << "2\n";
+        imgs[i].copyTo(new_dst_img(next_roi));
+        std::cout << "3\n";
+        dst_img = new_dst_img;
+        std::cout << "4\n";
+        x_pos = 0.0f;
+
+        // Finished Rendering Current Image
+        std::cout << i << "/" << imgs.size() << std::endl;
     }
 }

@@ -1,6 +1,7 @@
 #ifndef PTV_HPP
 #define PTV_HPP
 
+#include <cctype>
 #include <string>
 #include <vector>
 #include <iostream>
@@ -26,11 +27,11 @@ Application Options: \n\
    --gif                                  :  render .gif files in image sequences\n\
    --reverse-seq                          :  load numbered imgs from dir in decending order, larger # to smaller #\n\
 "
-#define FRAMES "Frames"
-#define UP "Up"
-#define DOWN "Down"
-#define LEFT "Left"
-#define RIGHT "Right"
+#define FRAMES "FRAMES"
+#define UP "UP"
+#define DOWN "DOWN"
+#define LEFT "LEFT"
+#define RIGHT "RIGHT"
 
 #define DEFAULT_DPI 72.0f
 
@@ -129,6 +130,9 @@ class Config {
                 } else if (arg == "-a") {
                     i++;
                     std::string a = std::string(argv[i]);
+                    for (size_t i = 0; i < a.size(); i++) {
+                        a[i] = toupper(a[i]);
+                    }
                     if (a != UP && a != DOWN && a != LEFT && a != RIGHT) {
                         std::cerr << "<!> Invalid input for '-a'. Must be [Up|Down|Left|Right]" << std::endl;
                         exit(1);

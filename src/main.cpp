@@ -66,7 +66,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    std::cout << "Initializing Video Renderer..." << std::endl;
+    // Initializing video renderer
     cv::Size frame_size(conf.get_width(), conf.get_height());
     cv::VideoWriter video = cv::VideoWriter(conf.get_output(), cv::CAP_FFMPEG, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), conf.get_fps(), frame_size, true);
 

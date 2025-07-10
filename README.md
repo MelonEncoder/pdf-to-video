@@ -32,7 +32,7 @@ Application Options:
 ```
 ## Dependencies
 1. [poppler](https://poppler.freedesktop.org/) >= 25.01.0 - pdf to image
-2. [opencv](https://opencv.org/) >= 4.10.0 - image manipulation
+2. [opencv](https://opencv.org/) >= 4.12.0 - image manipulation
 3. [ffmpeg](https://ffmpeg.org/) >= 7.0.0 - video rendering backend (not a build dependency)
 
 ## Build System

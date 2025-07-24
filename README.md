@@ -28,7 +28,7 @@ Application Options:
    -o [output_path]                       :  currently only support .mp4 files, leave blank for auto output
    -a [Up|Down|Left|Right]                :  scrolls content instead of making each page a frame (like a slideshow).
    --gif                                  :  render .gif files in image sequences\n\
-   --reverse-seq                          :  load numbered imgs from dir in decending order, larger # to smaller #
+   --rev-seq                          :  load numbered imgs from dir in decending order, larger # to smaller #
 ```
 ## Dependencies
 1. [poppler](https://poppler.freedesktop.org/) >= 25.01.0 - pdf to image

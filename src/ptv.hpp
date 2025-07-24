@@ -7,6 +7,7 @@
 #include <iostream>
 #include <filesystem>
 #include "opencv.hpp"
+#include "poppler.hpp"
 #include "poppler-rectangle.h"
 
 namespace ptv {
@@ -140,7 +141,7 @@ class Config {
                     style_ = a;
                 } else if (arg == "--gif") {
                     render_gifs_ = true;
-                } else if (arg == "--reverse-seq") {
+                } else if (arg == "--rev-seq") {
                     is_reverse_ = true;
                 } else {
                     std::cerr << "<!> Unknown argument detected: " << argv[i] << std::endl;
@@ -158,7 +159,7 @@ class Config {
             if (input_paths_.size() > 1) {
                 std::cout << "(" << input_paths_.size() << ") Inputs: ";
             } else {
-                std::cout << "(" << input_paths_.size() << ") Input: ";
+                std::cout << "(1) Input: ";
             }
             for (size_t i = 0; i < input_paths_.size(); i++) {
                 if (i > 0) {

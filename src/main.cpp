@@ -1,6 +1,3 @@
-#include "opencv.hpp"
-#include "opencv2/imgcodecs.hpp"
-#include "poppler.hpp"
 #include "ptv.hpp"
 #include <algorithm>
 
@@ -32,6 +29,8 @@ void generate_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &
 void generate_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, ptv::Config &conf);
 // void generate_video_scroll_right(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, ptv::Config &conf);
 
+void set_default_resolution(const std::string path, const std::string type, ptv::Config &conf);
+
 // ============= //
 // Main Function //
 // ============= //
@@ -42,33 +41,22 @@ int main(int argc, char **argv) {
     // Start timer after accepting settings
     time_t start_time = time(NULL);
 
-    // == FIGURE OUT CONDITION FOR NATIVE RESOLUTION (-r 0x0) ==
-    //
-    // If -r 0x0, adjusts resolution to fit first page
-    // if (pg == 0) {
-    //     poppler::rectf rect = page->page_rect(poppler::media_box);
-    //     conf.set_resolution(rect);
-    // }
-    // Sets video resolution to resolution of first image in the sequence.
-    // cv::Mat img = cv::imread(img_map[-1]);
-    // conf.set_resolution(img);
-    // img_map.erase(-1);
-
     std::cout << "Loading Images..." << std::endl;
     std::vector<cv::Mat> images = {};
-    std::vector<std::string> paths = conf.get_input_paths();
-    std::vector<std::string> types = conf.get_input_types();
-    for (size_t i = 0; i < paths.size(); i++) {
-        if (types[i] == "pdf") {
-            add_pdf_images(paths[i], images, conf);
-        } else if (types[i] == "dir") {
-            add_dir_images(paths[i], images, conf);
+    const std::vector<std::string> input_paths = conf.get_input_paths();
+    const std::vector<std::string> input_types = conf.get_input_types();
+
+    for (size_t i = 0; i < input_paths.size(); i++) {
+        if (input_types[i] == "pdf") {
+            add_pdf_images(input_paths[i], images, conf);
+        } else if (input_types[i] == "dir") {
+            add_dir_images(input_paths[i], images, conf);
         }
     }
 
     // Initializing video renderer
     cv::Size frame_size(conf.get_width(), conf.get_height());
-    cv::VideoWriter video = cv::VideoWriter(conf.get_output(), cv::CAP_FFMPEG, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), conf.get_fps(), frame_size, true);
+    cv::VideoWriter video = cv::VideoWriter(conf.get_output(), cv::CAP_FFMPEG, cv::VideoWriter::fourcc('a', 'v', 'c', '1'), conf.get_fps(), frame_size, true);
 
     std::cout << "Generating Video..." << std::endl;
     if (conf.get_style() == FRAMES) {
@@ -253,6 +241,15 @@ void add_dir_images(const std::string dir_path, std::vector<cv::Mat> &vid_images
         }
 
         cv::Mat mat = cv::imread(img_paths[i]);
+        // Updates resolution to first image
+        if (vid_images.size() == 0 && (conf.get_width() == 0 || conf.get_height() == 0)) {
+            if (conf.get_width() == 0) {
+                conf.set_width(mat.cols);
+            }
+            if (conf.get_height() == 0) {
+                conf.set_height(mat.rows);
+            }
+        }
         scale_image(mat, conf);
         vid_images.push_back(mat.clone());
         count++;
@@ -287,6 +284,16 @@ void add_pdf_images(const std::string pdf_path, std::vector<cv::Mat> &vid_images
     for (int pg = 0; pg < pdf->pages(); pg++) {
         double dpi = DEFAULT_DPI;
         poppler::page *page = pdf->create_page(pg);
+
+        // Updates resolution to first image
+        if (vid_images.size() == 0 && (conf.get_width() == 0 || conf.get_height() == 0)) {
+            if (conf.get_width() == 0) {
+                conf.set_width(page->page_rect().width());
+            }
+            if (conf.get_height() == 0) {
+                conf.set_height(page->page_rect().height());
+            }
+        }
 
         // Scales pages to correctly fit inside video resolution.
         if (conf.get_style()== FRAMES) {
@@ -472,5 +479,13 @@ void generate_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat>
 
         // Finished Rendering Current Image
         std::cout << i + 1 << "/" << imgs.size() << std::endl;
+    }
+}
+
+void set_default_resolution(const std::string path, const std::string type, ptv::Config &conf) {
+    if (type == "pdf") {
+        // read the first page of the pdf
+    } else if (type == "dir") {
+        // read the first image in the sequence, if --rev-seq
     }
 }

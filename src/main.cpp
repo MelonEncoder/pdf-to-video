@@ -55,8 +55,9 @@ int main(int argc, char **argv) {
     }
 
     // Initializing video renderer
+    std::string codec = conf.get_codec();
     cv::Size frame_size(conf.get_width(), conf.get_height());
-    cv::VideoWriter video = cv::VideoWriter(conf.get_output(), cv::CAP_FFMPEG, cv::VideoWriter::fourcc('a', 'v', 'c', '1'), conf.get_fps(), frame_size, true);
+    cv::VideoWriter video = cv::VideoWriter(conf.get_output(), cv::CAP_FFMPEG, cv::VideoWriter::fourcc(codec[0], codec[1], codec[2], codec[3]), conf.get_fps(), frame_size, true);
 
     std::cout << "Generating Video..." << std::endl;
     if (conf.get_style() == FRAMES) {
@@ -479,13 +480,5 @@ void generate_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat>
 
         // Finished Rendering Current Image
         std::cout << i + 1 << "/" << imgs.size() << std::endl;
-    }
-}
-
-void set_default_resolution(const std::string path, const std::string type, ptv::Config &conf) {
-    if (type == "pdf") {
-        // read the first page of the pdf
-    } else if (type == "dir") {
-        // read the first image in the sequence, if --rev-seq
     }
 }

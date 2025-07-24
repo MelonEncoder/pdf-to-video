@@ -46,7 +46,8 @@ class Config {
     float duration_ = 0;
     std::string style_ = FRAMES;
     std::string output_ = "";
-    std::string format_ = ".mp4";
+    std::string container_ = ".mp4";
+    std::string fourcc_codec_ = "avc1";
     std::vector<std::string> input_paths_ = {};
     std::vector<std::string> input_types_ = {};
 
@@ -114,8 +115,8 @@ class Config {
                 } else if (arg == "-o") {
                     i++;
                     arg = argv[i];
-                    if ((int)arg.find(format_) == -1) {
-                        std::cerr << "<!> Error: output file extension must be " + format_ << std::endl;
+                    if ((int)arg.find(container_) == -1) {
+                        std::cerr << "<!> Error: output file extension must be " + container_ << std::endl;
                         exit(1);
                     }
                     if ((int)arg.find('/') == -1) {
@@ -170,10 +171,10 @@ class Config {
             std::cout << std::endl;
             if (output_ == "" && input_types_[0] == "pdf") {
                 std::string path = input_paths_[0];
-                output_ = path.substr(0, path.find_last_of('.')) + format_;
+                output_ = path.substr(0, path.find_last_of('.')) + container_;
             } else if (output_ == "" && input_types_[0] == "dir") {
                 std::string path = input_paths_[0];
-                output_ = path.substr(0, path.find_last_of('/')) + format_;
+                output_ = path.substr(0, path.find_last_of('/')) + container_;
             }
             std::cout << "Output: " << output_ << std::endl;
             std::cout << "Resolution: " << width_ << "x" << height_ << std::endl;
@@ -223,7 +224,8 @@ class Config {
         float get_duration() { return  duration_; }
         std::string get_style() { return style_; }
         std::string get_output() { return output_; }
-        std::string get_format() { return format_; }
+        std::string get_container() { return container_; }
+        std::string get_codec() { return fourcc_codec_; }
         std::vector<std::string> get_input_paths() { return input_paths_; }
         std::vector<std::string> get_input_types() { return input_types_; }
 

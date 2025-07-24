@@ -26,7 +26,7 @@ Application Options: \n\
    -o [output_path]                       :  currently only support .mp4 files, leave blank for auto output\n\
    -a [Up|Down|Left|Right]                :  scrolls content instead of making each page a frame (like a slideshow).\n\
    --gif                                  :  render .gif files in image sequences\n\
-   --reverse-seq                          :  load numbered imgs from dir in decending order, larger # to smaller #\n\
+   --rev-seq                          :  load numbered imgs from dir in decending order, larger # to smaller #\n\
 "
 #define FRAMES "FRAMES"
 #define UP "UP"

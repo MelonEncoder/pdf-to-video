@@ -115,20 +115,22 @@ class Config {
                 } else if (arg == "-o") {
                     i++;
                     arg = argv[i];
-                    if ((int)arg.find(container_) == -1) {
-                        std::cerr << "<!> Error: output file extension must be " + container_ << std::endl;
-                        exit(1);
-                    }
-                    if ((int)arg.find('/') == -1) {
-                        output_ = arg;
-                    } else {
+                    if ((int)arg.find('/') != -1) {
                         std::string dir = arg.substr(0, arg.find_last_of('/') + 1);
                         if (!std::filesystem::exists(dir)) {
                             std::cout << "<!> Error: Output directory does not exists." << std::endl;
                             exit(1);
                         }
                     }
-                    output_ = arg;
+                    if ((int)arg.find_last_of('/') == arg.size() - 1) {
+                        std::cerr << "<!> Error: Output file cannot be a directory." << std::endl;
+                        exit(1);
+                    }
+                    if ((int)arg.find(container_) == -1) {
+                        output_ = arg + container_;
+                    } else {
+                        output_ = arg;
+                    }
                 } else if (arg == "-a") {
                     i++;
                     std::string a = std::string(argv[i]);
@@ -224,7 +226,6 @@ class Config {
         float get_duration() { return  duration_; }
         std::string get_style() { return style_; }
         std::string get_output() { return output_; }
-        std::string get_container() { return container_; }
         std::string get_codec() { return fourcc_codec_; }
         std::vector<std::string> get_input_paths() { return input_paths_; }
         std::vector<std::string> get_input_types() { return input_types_; }

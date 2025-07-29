@@ -1,6 +1,6 @@
 project('pdf_to_video', 'cpp')
 
-output = 'ptv.test'
+output = './bin/ptv'
 srcs = [
     'src/main.cpp',
 ]

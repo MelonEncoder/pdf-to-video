@@ -1,22 +1,17 @@
-project('pdf_to_video', 'cpp')
+project('PTV', 'cpp')
 
 output = './bin/ptv'
-srcs = [
-    'src/main.cpp',
-]
-args = [
-    '-DWITH_FFMPEG=ON',
-]
-
-## Dependencies
-deps = [
-    dependency('poppler-cpp', version: '>=25.01.0'),
-    dependency('opencv4', version: '>=4.12.0'),
-]
-
-executable(
+exe = executable(
     output,
-    sources: srcs,
-    cpp_args: args,
-    dependencies: deps,
+    sources: [
+        'src/main.cpp',
+        'src/ptv.cpp',
+    ],
+    cpp_args: [
+        '-DWITH_FFMPEG=ON',
+    ],
+    dependencies: [
+        dependency('poppler-cpp', version: '>=25.01.0'),
+        dependency('opencv4', version: '>=4.12.0'),
+    ],
 )

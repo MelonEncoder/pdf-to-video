@@ -3,3 +3,4 @@ build/
 test_input/
 .gitignore
 test/
+ptv-go

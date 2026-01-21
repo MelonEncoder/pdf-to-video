@@ -579,6 +579,7 @@ func writeFramesScroll(imgs []image.Image, conf *Config, framesDir string) (int,
 		}
 		fmt.Printf("Pixels per frame: %.4f\n", pxPerFrame)
 
+		frame := image.NewRGBA(image.Rect(0, 0, vw, vh))
 		for fi := 0; fi < totalFrames; fi++ {
 			var y0 int
 			switch conf.Style {
@@ -593,7 +594,6 @@ func writeFramesScroll(imgs []image.Image, conf *Config, framesDir string) (int,
 			if y0 > distance {
 				y0 = distance
 			}
-			frame := image.NewRGBA(image.Rect(0, 0, vw, vh))
 			draw.Draw(frame, frame.Bounds(), canvas, image.Point{0, y0}, draw.Src)
 			fn := filepath.Join(framesDir, fmt.Sprintf("frame%06d.jpg", fi+1))
 			if err := writeJPG(fn, frame); err != nil {
@@ -638,6 +638,7 @@ func writeFramesScroll(imgs []image.Image, conf *Config, framesDir string) (int,
 		}
 		fmt.Printf("Pixels per frame: %.4f\n", pxPerFrame)
 
+		frame := image.NewRGBA(image.Rect(0, 0, vw, vh))
 		for fi := 0; fi < totalFrames; fi++ {
 			var x0 int
 			switch conf.Style {
@@ -652,7 +653,6 @@ func writeFramesScroll(imgs []image.Image, conf *Config, framesDir string) (int,
 			if x0 > distance {
 				x0 = distance
 			}
-			frame := image.NewRGBA(image.Rect(0, 0, vw, vh))
 			draw.Draw(frame, frame.Bounds(), canvas, image.Point{x0, 0}, draw.Src)
 			fn := filepath.Join(framesDir, fmt.Sprintf("frame%06d.jpg", fi+1))
 			if err := writeJPG(fn, frame); err != nil {

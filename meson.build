@@ -12,6 +12,6 @@ exe = executable(
     ],
     dependencies: [
         dependency('poppler-cpp', version: '>=25.01.0'),
-        dependency('opencv4', version: '>=4.12.0'),
+        dependency('opencv5', version: '>=5.0.0'),
     ],
 )

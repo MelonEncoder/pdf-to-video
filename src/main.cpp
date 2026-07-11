@@ -1,5 +1,4 @@
 #include "ptv.hpp"
-#include "iostream"
 
 int main(int argc, char **argv) {
     Config conf(argc, argv);
@@ -7,7 +6,6 @@ int main(int argc, char **argv) {
     // Start timer after accepting settings
     time_t start_time = time(NULL);
 
-    std::cout << "Loading Images..." << std::endl;
     std::vector<cv::Mat> images = {};
     const std::vector<std::string> input_paths = conf.get_input_paths();
     const std::vector<std::string> input_types = conf.get_input_types();
@@ -46,10 +44,7 @@ int main(int argc, char **argv) {
     }
 
     // Time
-    size_t duration = difftime(time(NULL), start_time);
-    size_t minutes = duration / 60;
-    size_t seconds = duration % 60;
-    std::cout << "Time: " << minutes << "m " << seconds << "s" << std::endl;
+    print_duration(start_time);
 
     return 0;
 }

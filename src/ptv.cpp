@@ -122,18 +122,16 @@ input_types_({}) {
     }
 
     // Print Settings
-    if (input_paths_.size() > 1) {
-        std::cout << "(" << input_paths_.size() << ") Inputs: ";
-    } else {
-        std::cout << "(1) Input: ";
+    print_banner("PTV - Render Videos from PDFs and Image Sequences");
+
+    size_t gap = 20;
+    std::string input_label = "  Input (" + std::to_string(input_paths_.size()) + " path" + (input_paths_.size() != 1 ? "s" : "") + ")";
+    std::cout << std::left << std::setw(gap) << input_label << input_paths_[0];
+    for (size_t i = 1; i < input_paths_.size(); i++) {
+        std::cout << " + " << input_paths_[i];
     }
-    for (size_t i = 0; i < input_paths_.size(); i++) {
-        if (i > 0) {
-            std::cout << " + ";
-        }
-        std::cout << "" + input_paths_[i];
-    }
-    std::cout << std::endl;
+    std::cout << "\n";
+
     if (output_ == "" && input_types_[0] == "pdf") {
         std::string path = input_paths_[0];
         output_ = path.substr(0, path.find_last_of('.')) + container_;
@@ -141,19 +139,20 @@ input_types_({}) {
         std::string path = input_paths_[0];
         output_ = path.substr(0, path.find_last_of('/')) + container_;
     }
-    std::cout << "Output: " << output_ << std::endl;
-    std::cout << "Resolution: " << width_ << "x" << height_ << std::endl;
-    std::cout << "FPS: " << fps_ << std::endl;
+
+    std::cout << std::left << std::setw(gap) << "  Output" << output_ << "\n";
+    std::cout << std::left << std::setw(gap) << "  Resolution" << width_ << "x" << height_ << "\n";
+    std::cout << std::left << std::setw(gap) << "  FPS" << fps_ << "\n";
     if (duration_ != 0 && style_ != FRAMES) {
-        std::cout << "Duration: " << duration_ << "s" << std::endl;
+        std::cout << std::left << std::setw(gap) << "  Duration" << duration_ << "s\n";
     } else if (style_ != FRAMES) {
-        std::cout << "SPP: " << spp_ << std::endl;
+        std::cout << std::left << std::setw(gap) << "  SPP" << spp_ << "\n";
     }
-    std::cout << "Animated: " << style_ << std::endl;
+    std::cout << std::left << std::setw(gap) << "  Animation" << style_ << "\n";
 
     // User Confirm Setttings
     std::string check;
-    std::cout << "Are these values correct: [Y/n]" << std::endl;
+    std::cout << "\n" << COLOR_BOLD << "Proceed? [Y/n] " << COLOR_RESET;
     std::getline(std::cin, check);
     if (!check.empty() && check != "Y" && check != "y") {
         exit(1);
@@ -354,6 +353,9 @@ void add_dir_images(const std::string dir_path, std::vector<cv::Mat> &vid_images
         vid_images.push_back(mat.clone());
         count++;
         i += conf.get_is_reverse() ? -1 : 1;
+
+        // Status
+        print_progress_bar("Loading Images", count, size, count == 0);
     }
 }
 
@@ -428,12 +430,15 @@ void add_pdf_images(const std::string pdf_path, std::vector<cv::Mat> &vid_images
             cv::cvtColor(tmp, mat, cv::COLOR_RGBA2RGB);
         }
         vid_images.push_back(mat.clone());
+
+        // Status
+        print_progress_bar("Loading Images", pg, pdf->pages(), pg == 0);
     }
 }
 
 // Classic image sequence effect
 void render_video_sequence(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf) {
-    for (size_t i = 0; i < imgs.size(); i ++) {
+    for (size_t i = 0; i < imgs.size(); i++) {
         cv::Mat img = imgs[i];
         cv::Mat vp_img = cv::Mat(conf.get_height(), conf.get_width(), img.type(), cv::Scalar(0, 0, 0));
         int x = 0;
@@ -451,69 +456,20 @@ void render_video_sequence(cv::VideoWriter &vid, const std::vector<cv::Mat> &img
         cv::Rect2i roi(x, y, img.cols, img.rows);
         img.copyTo(vp_img(roi));
         vid.write(vp_img);
+
+        // Status
+        print_progress_bar("Rendering Video", i + 1, imgs.size(), i == 0);
     }
 }
 
 
 
 // ===== SCROLL EFFECTS =====
-// helper
-double get_pixels_per_frame(const std::vector<cv::Mat> &imgs, Config &conf) {
-    // Find px_per_frame
-    double px_per_frame = 1.0;
-
-    if (conf.get_style() == UP || conf.get_style() == DOWN) {
-        int height_of_imgs = 0;
-        for (size_t i = 0; i < imgs.size(); i++) {
-            height_of_imgs += imgs[i].size().height;
-        }
-        if (conf.get_duration() == 0) {
-            px_per_frame += height_of_imgs / (conf.get_fps() * conf.get_spp() * imgs.size());
-        } else {
-            px_per_frame = height_of_imgs / (conf.get_fps() * conf.get_duration());
-        }
-    } else if (conf.get_style() == LEFT || conf.get_style() == RIGHT) {
-        int width_of_imgs = 0;
-        for (size_t i = 0; i < imgs.size(); i++) {
-            width_of_imgs += imgs[i].size().width;
-        }
-        if (conf.get_duration() == 0) {
-            px_per_frame += width_of_imgs / (conf.get_fps() * conf.get_spp() * imgs.size());
-        } else {
-            px_per_frame = width_of_imgs / (conf.get_fps() * conf.get_duration());
-        }
-    }
-    if (px_per_frame <= 0.0f) {
-        px_per_frame = 1.0f;
-        std::cout << "<!> Warning: pixels per frame value was <= 0.0, set value to 1.0" << std::endl;
-    }
-
-
-    return px_per_frame;
-}
-
-// helper
-void print_progress_bar(const int current_value, const int total, int bar_width) {
-    double pct_progress = static_cast<double>(current_value) / static_cast<double>(total);
-    int amount_filled = static_cast<int>(bar_width * pct_progress);
-    std::cout << "\rRendering (" << current_value << "/" << total << ") ";
-    std::cout << "[";
-    for (int i = 0; i < bar_width; i++) {
-        std::cout << (i < amount_filled ? '#' : ' ');
-    }
-    std::cout << "] " << std::setw(3) << static_cast<int>(pct_progress * 100) << "% " << std::flush;
-    if (current_value == total) {
-        std::cout << std::endl;
-    }
-}
-
 void render_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf) {
     double px_per_frame = get_pixels_per_frame(imgs, conf);
     double y_pos = 0.0f;
     cv::Mat dst_img(conf.get_height() + imgs[0].rows, conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0)); // Black Box ( video height + first img height by video width )
     cv::Mat vp_img(conf.get_height(), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
-
-    std::cout << "PPF (pixels per frame): " << px_per_frame << std::endl;
 
     // Generates and writes frames to video file. Prevents creating space between each new img.
     for (size_t i = 0; i < imgs.size(); i++) {
@@ -549,8 +505,8 @@ void render_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &im
             y_pos += px_per_frame;
         }
 
-        // Finished Rendering Current Image
-        print_progress_bar(i + 1, imgs.size());
+        // Status
+        print_progress_bar(make_scroll_label(px_per_frame), i + 1, imgs.size(), i == 0);
     }
 }
 
@@ -560,8 +516,6 @@ void render_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat> &
     double x_pos = 0.0f;
     cv::Mat dst_img(conf.get_height(), (conf.get_width() + imgs[0].cols), CV_8UC3, cv::Scalar(0, 0, 0)); // Contains frame content ( video height by video width + first img width)
     cv::Mat vp_img(conf.get_height(), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0)); // Frame content gets rendered here
-
-    std::cout << "PPF (pixels per frame): " << px_per_frame << std::endl;
 
     for (size_t i = 0; i < imgs.size(); i++) {
         if (i == 0) {
@@ -599,7 +553,91 @@ void render_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat> &
             x_pos += px_per_frame;
         }
 
-        // Finished Rendering Current Image
-        print_progress_bar(i + 1, imgs.size());
+        // Status
+        print_progress_bar(make_scroll_label(px_per_frame), i + 1, imgs.size(), i == 0);
     }
+}
+
+// ==== HELPER FUNCTIONS ====
+double get_pixels_per_frame(const std::vector<cv::Mat> &imgs, Config &conf) {
+    // Find px_per_frame
+    double px_per_frame = 1.0;
+
+    if (conf.get_style() == UP || conf.get_style() == DOWN) {
+        int height_of_imgs = 0;
+        for (size_t i = 0; i < imgs.size(); i++) {
+            height_of_imgs += imgs[i].size().height;
+        }
+        if (conf.get_duration() == 0) {
+            px_per_frame += height_of_imgs / (conf.get_fps() * conf.get_spp() * imgs.size());
+        } else {
+            px_per_frame = height_of_imgs / (conf.get_fps() * conf.get_duration());
+        }
+    } else if (conf.get_style() == LEFT || conf.get_style() == RIGHT) {
+        int width_of_imgs = 0;
+        for (size_t i = 0; i < imgs.size(); i++) {
+            width_of_imgs += imgs[i].size().width;
+        }
+        if (conf.get_duration() == 0) {
+            px_per_frame += width_of_imgs / (conf.get_fps() * conf.get_spp() * imgs.size());
+        } else {
+            px_per_frame = width_of_imgs / (conf.get_fps() * conf.get_duration());
+        }
+    }
+    if (px_per_frame <= 0.0f) {
+        px_per_frame = 1.0f;
+        std::cout << "<!> Warning: pixels per frame value was <= 0.0, set value to 1.0" << std::endl;
+    }
+
+    return px_per_frame;
+}
+
+std::string make_scroll_label(const double px_per_frame) {
+    std::ostringstream label_stream;
+    label_stream << "Rendering Video " << COLOR_DIM << "("
+        << std::fixed << std::setprecision(2) << px_per_frame
+        << " px/frame)" << COLOR_RESET;
+    return label_stream.str();
+}
+
+void print_progress_bar(const std::string& label, const int current_value, const int total, const bool first_call, const int bar_width) {
+    double pct_progress = static_cast<double>(current_value) / static_cast<double>(total);
+    int amount_filled = static_cast<int>(bar_width * pct_progress);
+    bool is_done = (current_value == total);
+
+    if (!first_call) {
+        std::cout << "\x1b[1A" << "\r" << "\x1b[2K"; // move up 1 line, clear it
+    }
+
+    std::cout << (is_done ? COLOR_GREEN "\u2713\uFE0E " COLOR_RESET : COLOR_ORANGE "\u25B6\uFE0E " COLOR_RESET)
+               << label << "\x1b[K" << "\n";
+    std::cout << "\r" << "\x1b[2K" << "  [";
+    for (int i = 0; i < bar_width; i++) {
+        std::cout << (i < amount_filled ? "#" : "-");
+    }
+    std::cout << "] " << std::setw(3) << static_cast<int>(pct_progress * 100)
+               << "% (" << current_value << "/" << total << ")" << std::flush;
+
+    if (is_done) {
+        std::cout << std::endl;
+    }
+}
+
+void print_duration(const time_t start_time) {
+    size_t duration = difftime(time(NULL), start_time);
+    size_t minutes = duration / 60;
+    size_t seconds = duration % 60;
+    std::cout << COLOR_GREEN << "\u2713\uFE0E " << COLOR_RESET
+               << "Done in " << minutes << "m " << seconds << "s" << std::endl;
+}
+
+void print_banner(const std::string &title) {
+    int width = static_cast<int>(title.size()) + 4;
+    std::cout << "\u250C";
+    for (int i = 0; i < width; i++) std::cout << "\u2500";
+    std::cout << "\u2510\n";
+    std::cout << "\u2502  " << COLOR_BOLD << title << COLOR_RESET << "  \u2502\n";
+    std::cout << "\u2514";
+    for (int i = 0; i < width; i++) std::cout << "\u2500";
+    std::cout << "\u2518\n\n";
 }

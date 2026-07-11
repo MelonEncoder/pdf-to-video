@@ -26,6 +26,14 @@
 
 namespace ptv {
 
+// TERMINAL STYLES
+#define COLOR_RESET "\x1b[0m"
+#define COLOR_BOLD "\x1b[1m"
+#define COLOR_DIM "\x1b[2m"
+#define COLOR_GREEN "\x1b[32m"
+#define COLOR_CYAN "\x1b[36m"
+#define COLOR_ORANGE "\x1b[38;2;255;165;0m"
+
 #define HELP_TXT "\
 Usage:\n\
    ptv [...options]\n\
@@ -89,6 +97,7 @@ class Config {
         std::vector<std::string> get_input_types();
 };
 
+// HELPER
 void scale_image_to_width(cv::Mat &img, const int dst_width);
 void scale_image_to_height(cv::Mat &img, const int dst_height);
 void scale_image_to_fit(cv::Mat& img, Config &conf);
@@ -99,19 +108,26 @@ double get_scaled_dpi_from_height(const poppler::page *page, const int height); 
 double get_scaled_dpi_to_fit(poppler::page *page, Config &conf); // dpi fits entire page in viewport
 
 std::vector<std::string> get_dir_img_paths(std::string dir_path);
+
+double get_pixels_per_frame(const std::vector<cv::Mat> &imgs, Config &conf);
+
+// LOADING
 void add_dir_images(const std::string dir_path, std::vector<cv::Mat> &vid_images, Config &conf);
 void add_pdf_images(const std::string pdf_path, std::vector<cv::Mat> &vid_images, Config &conf);
 void add_gif_images(const std::string gif_path, std::vector<cv::Mat> &vid_images, Config &conf);
 
+// RENDERING
 void render_video_sequence(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
-
-double get_pixels_per_frame(const std::vector<cv::Mat> &imgs, Config &conf);
 void render_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
 // void render_video_scroll_down(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
 void render_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
 // void render_video_scroll_right(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
 
-void print_progress_bar(const int current_value, const int total, const int bar_width = 40);
+// MISC
+void print_duration(const time_t start_time);
+void print_progress_bar(const std::string& label, const int current_value, const int total, const bool first_call, const int width = 44);
+void print_banner(const std::string &title);
+std::string make_scroll_label(const double px_per_frame);
 
 void set_default_resolution(const std::string path, const std::string type, Config &conf);
 

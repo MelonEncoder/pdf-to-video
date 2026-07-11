@@ -34,22 +34,7 @@ namespace ptv {
 #define COLOR_CYAN "\x1b[36m"
 #define COLOR_ORANGE "\x1b[38;2;255;165;0m"
 
-#define HELP_TXT "\
-Usage:\n\
-   ptv [...options]\n\
-Options: \n\
-   [...pdf_paths]                         :  PDF file paths. Ex: /home/usr/example.pdf\n\
-   [...img_sequence_dirs]                 :  image sequence directorys. Ex: /home/usr/example_seq/\n\
-   -r <int>x<int>                         :  set output resolution. Use 0 to preserve resolution of original content, default: 1280x720 \n\
-   -f <float>                             :  frames per second.\n\
-   -s <float>                             :  seconds per frame.\n\
-   -d <float>                             :  duration in seconds. NOTE: overides -s (seconds per frame)\n\
-   -o [output_path]                       :  currently only support .mp4 files, leave blank for auto output\n\
-   -a [Up|Down|Left|Right]                :  scrolls content instead of making each page a frame (like a slideshow).\n\
-   -h, --help                             :  show this help text.\n\
-   --gif                                  :  render .gif files in image sequences\n\
-   --rev-seq                              :  load numbered imgs from dir in decending order, larger # to smaller #\n\
-"
+
 #define FRAMES "FRAMES"
 #define UP "UP"
 #define DOWN "DOWN"
@@ -59,6 +44,29 @@ Options: \n\
 #define DEFAULT_DPI 72.0f
 
 }
+const std::string HELP_TXT =
+    "\n" COLOR_BOLD "ptv" COLOR_RESET " \u2014 PDF / Image Sequence to Video\n\n"
+    COLOR_BOLD "Usage:\n" COLOR_RESET
+    "  ptv [input paths...] [options]\n\n"
+
+    COLOR_BOLD "Inputs:\n" COLOR_RESET
+    "  " COLOR_ORANGE "<path.pdf>" COLOR_RESET "                PDF file(s) to render.\n"
+    "  " COLOR_ORANGE "<sequence_dir/>" COLOR_RESET "           Directory of numbered images.\n\n"
+
+    COLOR_BOLD "Options:\n" COLOR_RESET
+    "  " COLOR_CYAN "-r <int>x<int>" COLOR_RESET "            Output resolution. 0 preserves original. " COLOR_DIM "(default: 1280x720)" COLOR_RESET "\n"
+    "  " COLOR_CYAN "-f <float>" COLOR_RESET "                Frames per second.\n"
+    "  " COLOR_CYAN "-s <float>" COLOR_RESET "                Seconds per frame.\n"
+    "  " COLOR_CYAN "-d <float>" COLOR_RESET "                Duration of video in seconds. " COLOR_DIM "(overrides -s)" COLOR_RESET "\n"
+    "  " COLOR_CYAN "-o <output_path>" COLOR_RESET "          Output file path. " COLOR_DIM "(.mp4 only, auto-named if blank)" COLOR_RESET "\n"
+    "  " COLOR_CYAN "-a <Up|Down|Left|Right>" COLOR_RESET "   Scroll content continuously instead of per-page frames.\n"
+    "  " COLOR_CYAN "--gif" COLOR_RESET "                     Render .gif files found in image sequences.\n"
+    "  " COLOR_CYAN "--rev-seq" COLOR_RESET "                 Load numbered images in descending order.\n"
+    "  " COLOR_CYAN "-h, --help" COLOR_RESET "                Show this help text.\n\n"
+
+    COLOR_BOLD "Examples:\n" COLOR_RESET
+    "  " COLOR_DIM "ptv slides.pdf -r 1920x1080 -f 30 -s 2" COLOR_RESET "\n"
+    "  " COLOR_DIM "ptv frames/ -a Up -f 60 -o output.mp4" COLOR_RESET "\n";
 
 class Config {
     private:

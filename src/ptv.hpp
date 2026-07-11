@@ -103,13 +103,15 @@ void add_dir_images(const std::string dir_path, std::vector<cv::Mat> &vid_images
 void add_pdf_images(const std::string pdf_path, std::vector<cv::Mat> &vid_images, Config &conf);
 void add_gif_images(const std::string gif_path, std::vector<cv::Mat> &vid_images, Config &conf);
 
-void generate_video_sequence(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
+void render_video_sequence(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
 
 double get_pixels_per_frame(const std::vector<cv::Mat> &imgs, Config &conf);
-void generate_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
-// void generate_video_scroll_down(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
-void generate_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
-// void generate_video_scroll_right(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
+void render_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
+// void render_video_scroll_down(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
+void render_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
+// void render_video_scroll_right(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf);
+
+void print_progress_bar(const int current_value, const int total, const int bar_width = 40);
 
 void set_default_resolution(const std::string path, const std::string type, Config &conf);
 

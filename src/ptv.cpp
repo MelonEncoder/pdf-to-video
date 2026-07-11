@@ -1,5 +1,6 @@
 #include "ptv.hpp"
 #include <filesystem>
+#include <iomanip>
 
 Config::Config(int argc, char **argv) :
 render_gifs_(false),
@@ -431,7 +432,7 @@ void add_pdf_images(const std::string pdf_path, std::vector<cv::Mat> &vid_images
 }
 
 // Classic image sequence effect
-void generate_video_sequence(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf) {
+void render_video_sequence(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf) {
     for (size_t i = 0; i < imgs.size(); i ++) {
         cv::Mat img = imgs[i];
         cv::Mat vp_img = cv::Mat(conf.get_height(), conf.get_width(), img.type(), cv::Scalar(0, 0, 0));
@@ -453,6 +454,10 @@ void generate_video_sequence(cv::VideoWriter &vid, const std::vector<cv::Mat> &i
     }
 }
 
+
+
+// ===== SCROLL EFFECTS =====
+// helper
 double get_pixels_per_frame(const std::vector<cv::Mat> &imgs, Config &conf) {
     // Find px_per_frame
     double px_per_frame = 1.0;
@@ -482,17 +487,33 @@ double get_pixels_per_frame(const std::vector<cv::Mat> &imgs, Config &conf) {
         px_per_frame = 1.0f;
         std::cout << "<!> Warning: pixels per frame value was <= 0.0, set value to 1.0" << std::endl;
     }
-    std::cout << "Pixels per frame: " << px_per_frame << std::endl;
+
 
     return px_per_frame;
 }
 
-// ===== SCROLL EFFECTS =====
-void generate_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf) {
+// helper
+void print_progress_bar(const int current_value, const int total, int bar_width) {
+    double pct_progress = static_cast<double>(current_value) / static_cast<double>(total);
+    int amount_filled = static_cast<int>(bar_width * pct_progress);
+    std::cout << "\rRendering (" << current_value << "/" << total << ") ";
+    std::cout << "[";
+    for (int i = 0; i < bar_width; i++) {
+        std::cout << (i < amount_filled ? '#' : ' ');
+    }
+    std::cout << "] " << std::setw(3) << static_cast<int>(pct_progress * 100) << "% " << std::flush;
+    if (current_value == total) {
+        std::cout << std::endl;
+    }
+}
+
+void render_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf) {
     double px_per_frame = get_pixels_per_frame(imgs, conf);
     double y_pos = 0.0f;
     cv::Mat dst_img(conf.get_height() + imgs[0].rows, conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0)); // Black Box ( video height + first img height by video width )
     cv::Mat vp_img(conf.get_height(), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0));
+
+    std::cout << "PPF (pixels per frame): " << px_per_frame << std::endl;
 
     // Generates and writes frames to video file. Prevents creating space between each new img.
     for (size_t i = 0; i < imgs.size(); i++) {
@@ -529,16 +550,18 @@ void generate_video_scroll_up(cv::VideoWriter &vid, const std::vector<cv::Mat> &
         }
 
         // Finished Rendering Current Image
-        std::cout << i + 1 << "/" << imgs.size() << std::endl;
+        print_progress_bar(i + 1, imgs.size());
     }
 }
 
 //
-void generate_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf) {
+void render_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat> &imgs, Config &conf) {
     double px_per_frame = get_pixels_per_frame(imgs, conf);
     double x_pos = 0.0f;
     cv::Mat dst_img(conf.get_height(), (conf.get_width() + imgs[0].cols), CV_8UC3, cv::Scalar(0, 0, 0)); // Contains frame content ( video height by video width + first img width)
     cv::Mat vp_img(conf.get_height(), conf.get_width(), CV_8UC3, cv::Scalar(0, 0, 0)); // Frame content gets rendered here
+
+    std::cout << "PPF (pixels per frame): " << px_per_frame << std::endl;
 
     for (size_t i = 0; i < imgs.size(); i++) {
         if (i == 0) {
@@ -577,6 +600,6 @@ void generate_video_scroll_left(cv::VideoWriter &vid, const std::vector<cv::Mat>
         }
 
         // Finished Rendering Current Image
-        std::cout << i + 1 << "/" << imgs.size() << std::endl;
+        print_progress_bar(i + 1, imgs.size());
     }
 }

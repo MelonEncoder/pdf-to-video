@@ -1,0 +1,24 @@
+[package]
+name = "ptv"
+version = "0.2.0"
+edition = "2024"
+description = "Convert PDFs and numbered image sequences into MP4 videos"
+license-file = "LICENSE"
+
+[dependencies]
+anyhow = "1.0"
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+hayro = "0.9"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "tiff"] }
+mp4 = "0.14"
+openh264 = "0.9"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+# Image decoding/resizing and H.264 encoding are painfully slow unoptimised,
+# so optimise dependencies even in debug builds.
+[profile.dev.package."*"]
+opt-level = 3

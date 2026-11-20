@@ -4,3 +4,4 @@ test_input/
 .gitignore
 test/
 ptv-go
+/target

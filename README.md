@@ -3,10 +3,10 @@ This is a CLI tool used to convert **PDF** files and numbered **image sequences*
 
 ## Features
 - Convert .pdf files to video
-- Convert image_sequence/ directories to video
+- Convert image_sequence/ directories to video (numbered files: `1.png`, `2.png`, `010_title.jpg`, ...)
 - Animation styles:
-	- sequence (each image is a frame, on by default)
-	- scroll
+	- sequence (each image is shown for `-s` seconds, on by default)
+	- scroll Up, Down, Left or Right
 - Chain PDFs and/or Image Sequences together. Ex:
 ```
 ptv 1.pdf 2.pdf seq/ --> output.mp4
@@ -16,24 +16,40 @@ ptv 1.pdf 2.pdf seq/ --> output.mp4
 
 ### Flags
 ```
-Help Options:
-   -h, --help                             :  show this help text.
-Application Options:
-   [pdf_paths...]                         :  PDF file path. /home/usr/example.pdf
-   [img_sequence_dirs...]                 :  image sequence directory. /home/usr/example_seq/
-   -r <int>x<int>                         :  set output resolution. Use 0 to preserve resolution of original content, default: 1280x720
-   -f <float>                             :  frames per second.
-   -s <float>                             :  seconds per frame.
-   -d <float>                             :  duration in seconds. NOTE: overides -s (seconds per frame)
-   -o [output_path]                       :  currently only support .mp4 files, leave blank for auto output
-   -a [Up|Down|Left|Right]                :  scrolls content instead of making each page a frame (like a slideshow).
-   --gif                                  :  render .gif files in image sequences\n\
-   --rev-seq                              :  load numbered imgs from dir in decending order, larger # to smaller #
-```
-## Dependencies
-1. [poppler](https://poppler.freedesktop.org/) >= 25.01.0 - pdf to image
-2. [opencv](https://opencv.org/) >= 5.0.0 - image manipulation
-3. [ffmpeg](https://ffmpeg.org/) >= 7.0.0 - video rendering backend (not a build dependency)
+Inputs:
+  <path.pdf>                  PDF file(s) to render.
+  <sequence_dir/>             Directory of numbered images.
 
-## Build System
-I'm using the [Meson](https://mesonbuild.com/) build system for my project. It's simple, modern, and easy to learn.
+Options:
+  -r <int>x<int>              Output resolution. 0 preserves original. (default: 1280x720)
+  -f <float>                  Frames per second. (default: 1)
+  -s <float>                  Seconds each page/image is shown. (default: 1)
+  -d <float>                  Duration of video in seconds. (overrides -s)
+  -o <output_path>            Output file path. (.mp4 only, auto-named if blank)
+  -a <Up|Down|Left|Right>     Scroll content continuously instead of per-page frames.
+  --gif                       Render .gif files found in image sequences.
+  --rev                       Reverse order: PDF pages last-to-first, images by descending number.
+  -y, --yes                   Skip the confirmation prompt.
+  -h, --help                  Show this help text.
+```
+
+## Building
+PTV is written in Rust. Everything it needs is compiled into the binary, so system
+updates (OpenCV, Poppler, FFmpeg, ...) can't break it and nothing needs to be installed
+to run it.
+
+```
+cargo build --release
+./target/release/ptv --help
+```
+
+Requires a Rust toolchain ([rustup](https://rustup.rs/)) and a C/C++ compiler (used to
+build the bundled OpenH264 encoder).
+
+## Dependencies
+All are fetched and pinned by Cargo (`Cargo.lock`):
+1. [hayro](https://github.com/LaurenzV/hayro) - PDF rendering (pure Rust)
+2. [image](https://github.com/image-rs/image) - image decoding and resizing (pure Rust)
+3. [openh264](https://github.com/ralfbiedert/openh264-rs) - H.264 encoding (Cisco's OpenH264, compiled from source and statically linked)
+4. [mp4](https://github.com/alfg/mp4-rust) - MP4 container writing (pure Rust)
+5. [clap](https://github.com/clap-rs/clap) - argument parsing

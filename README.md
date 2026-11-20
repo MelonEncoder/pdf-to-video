@@ -29,6 +29,7 @@ Options:
   -a <Up|Down|Left|Right>     Scroll content continuously instead of per-page frames.
   --gif                       Render .gif files found in image sequences.
   --rev                       Reverse order: PDF pages last-to-first, images by descending number.
+  -j <int>                    Worker threads. (default: all CPU cores)
   -y, --yes                   Skip the confirmation prompt.
   -h, --help                  Show this help text.
 ```

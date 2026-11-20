@@ -75,6 +75,9 @@ struct Args {
     #[arg(long = "rev")]
     rev: bool,
 
+    #[arg(short = 'j')]
+    jobs: Option<usize>,
+
     #[arg(short = 'y', long = "yes")]
     yes: bool,
 
@@ -96,6 +99,8 @@ pub struct Config {
     pub render_gifs: bool,
     pub reverse: bool,
     pub assume_yes: bool,
+    /// Worker threads for loading and encoding.
+    pub threads: usize,
 }
 
 impl Config {
@@ -266,6 +271,10 @@ fn build_config(args: Args) -> Result<Config> {
         render_gifs: args.gif,
         reverse: args.rev,
         assume_yes: args.yes,
+        threads: match args.jobs {
+            Some(n) if n > 0 => n,
+            _ => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        },
     })
 }
 
@@ -296,6 +305,7 @@ pub fn confirm(conf: &Config) -> bool {
         None => println!("{:<GAP$}{}", "  SPP", conf.spp),
     }
     println!("{:<GAP$}{}", "  Animation", conf.style.name());
+    println!("{:<GAP$}{}", "  Threads", conf.threads);
 
     if conf.assume_yes {
         println!();

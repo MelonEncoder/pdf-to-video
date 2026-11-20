@@ -1,12 +1,14 @@
 //! Turning loaded images into video frames: per-image frames, or continuous scrolling.
+//!
+//! Each style is a [`FrameSource`] that can draw any frame on demand, so the encoder can
+//! render and encode different parts of the video on different threads.
 
-use anyhow::Result;
 use image::RgbImage;
 use image::imageops;
 
 use crate::cli::{Config, Style};
-use crate::encode::FrameSink;
-use crate::ui::{self, Progress};
+use crate::encode::FrameSource;
+use crate::ui;
 
 /// How long each image is shown in frames mode: `-d` split evenly, else `-s`.
 fn frames_per_image(conf: &Config, n_images: usize) -> usize {
@@ -15,21 +17,47 @@ fn frames_per_image(conf: &Config, n_images: usize) -> usize {
 }
 
 /// Slideshow: each image centred on a black frame and held for its share of the video.
-pub fn render_frames(images: &[RgbImage], conf: &Config, sink: &mut impl FrameSink) -> Result<()> {
-    let repeat = frames_per_image(conf, images.len());
-    let mut progress = Progress::new("Rendering Video", images.len());
-    let mut frame = RgbImage::new(conf.width, conf.height);
-    for (i, img) in images.iter().enumerate() {
-        frame.fill(0);
-        let x = (conf.width.saturating_sub(img.width()) / 2) as i64;
-        let y = (conf.height.saturating_sub(img.height()) / 2) as i64;
-        imageops::replace(&mut frame, img, x, y);
-        for _ in 0..repeat {
-            sink.write_frame(&frame)?;
+pub struct Slideshow<'a> {
+    images: &'a [RgbImage],
+    repeat: usize,
+    width: u32,
+    height: u32,
+}
+
+impl<'a> Slideshow<'a> {
+    pub fn new(images: &'a [RgbImage], conf: &Config) -> Self {
+        Self {
+            images,
+            repeat: frames_per_image(conf, images.len()),
+            width: conf.width,
+            height: conf.height,
         }
-        progress.set(i + 1);
     }
-    Ok(())
+}
+
+impl FrameSource for Slideshow<'_> {
+    fn len(&self) -> usize {
+        self.images.len() * self.repeat
+    }
+    fn width(&self) -> u32 {
+        self.width
+    }
+    fn height(&self) -> u32 {
+        self.height
+    }
+    fn label(&self) -> String {
+        "Rendering Video".into()
+    }
+    fn render(&self, k: usize, frame: &mut RgbImage) {
+        let img = &self.images[k / self.repeat];
+        frame.fill(0);
+        let x = (self.width.saturating_sub(img.width()) / 2) as i64;
+        let y = (self.height.saturating_sub(img.height()) / 2) as i64;
+        imageops::replace(frame, img, x, y);
+    }
+    fn same_as_previous(&self, k: usize) -> bool {
+        !k.is_multiple_of(self.repeat)
+    }
 }
 
 /// One image placed along the scroll axis of the virtual content strip.
@@ -123,34 +151,69 @@ fn scroll_frame_count(conf: &Config, n_images: usize) -> usize {
 
 /// Continuous scroll in any direction. Content enters from the edge opposite the scroll
 /// direction and the video ends once it has fully left the screen.
-pub fn render_scroll(images: &[RgbImage], conf: &Config, sink: &mut impl FrameSink) -> Result<()> {
-    let strip = Strip::new(images, conf.style, conf.width, conf.height);
-    let n = scroll_frame_count(conf, images.len());
-    let px_per_frame = strip.travel as f64 / (n - 1) as f64;
-    if px_per_frame < 0.25 {
-        ui::note(format!(
-            "scrolling very slowly ({px_per_frame:.2} px/frame); motion may look jerky."
-        ));
-    }
-    let forward = matches!(conf.style, Style::Up | Style::Left);
-
-    let mut progress = Progress::new(ui::scroll_label(px_per_frame), n);
-    let mut frame = RgbImage::new(conf.width, conf.height);
-    for k in 0..n {
-        let t = k as f64 / (n - 1) as f64;
-        let t = if forward { t } else { 1.0 - t };
-        let offset = (t * strip.travel as f64).round() as usize;
-        strip.compose(&mut frame, offset);
-        sink.write_frame(&frame)?;
-        progress.set(k + 1);
-    }
-    Ok(())
+pub struct Scroll<'a> {
+    strip: Strip<'a>,
+    frames: usize,
+    forward: bool,
+    width: u32,
+    height: u32,
 }
 
-pub fn render(images: &[RgbImage], conf: &Config, sink: &mut impl FrameSink) -> Result<()> {
+impl<'a> Scroll<'a> {
+    pub fn new(images: &'a [RgbImage], conf: &Config) -> Self {
+        let scroll = Self {
+            strip: Strip::new(images, conf.style, conf.width, conf.height),
+            frames: scroll_frame_count(conf, images.len()),
+            forward: matches!(conf.style, Style::Up | Style::Left),
+            width: conf.width,
+            height: conf.height,
+        };
+        if scroll.px_per_frame() < 0.25 {
+            ui::note(format!(
+                "scrolling very slowly ({:.2} px/frame); motion may look jerky.",
+                scroll.px_per_frame()
+            ));
+        }
+        scroll
+    }
+
+    fn px_per_frame(&self) -> f64 {
+        self.strip.travel as f64 / (self.frames - 1) as f64
+    }
+
+    fn offset(&self, k: usize) -> usize {
+        let t = k as f64 / (self.frames - 1) as f64;
+        let t = if self.forward { t } else { 1.0 - t };
+        (t * self.strip.travel as f64).round() as usize
+    }
+}
+
+impl FrameSource for Scroll<'_> {
+    fn len(&self) -> usize {
+        self.frames
+    }
+    fn width(&self) -> u32 {
+        self.width
+    }
+    fn height(&self) -> u32 {
+        self.height
+    }
+    fn label(&self) -> String {
+        ui::scroll_label(self.px_per_frame())
+    }
+    fn render(&self, k: usize, frame: &mut RgbImage) {
+        self.strip.compose(frame, self.offset(k));
+    }
+    fn same_as_previous(&self, k: usize) -> bool {
+        k > 0 && self.offset(k) == self.offset(k - 1)
+    }
+}
+
+/// The frame source for the configured style.
+pub fn frame_source<'a>(images: &'a [RgbImage], conf: &Config) -> Box<dyn FrameSource + 'a> {
     match conf.style {
-        Style::Frames => render_frames(images, conf, sink),
-        _ => render_scroll(images, conf, sink),
+        Style::Frames => Box::new(Slideshow::new(images, conf)),
+        _ => Box::new(Scroll::new(images, conf)),
     }
 }
 
@@ -159,13 +222,6 @@ mod tests {
     use super::*;
     use image::Rgb;
     use std::path::PathBuf;
-
-    impl FrameSink for Vec<RgbImage> {
-        fn write_frame(&mut self, frame: &RgbImage) -> Result<()> {
-            self.push(frame.clone());
-            Ok(())
-        }
-    }
 
     fn conf(style: Style, w: u32, h: u32, fps: f64, duration: Option<f64>) -> Config {
         Config {
@@ -180,7 +236,19 @@ mod tests {
             render_gifs: false,
             reverse: false,
             assume_yes: true,
+            threads: 1,
         }
+    }
+
+    /// Render every frame of a source, as the encoder would.
+    fn all_frames(src: &dyn FrameSource) -> Vec<RgbImage> {
+        (0..src.len())
+            .map(|k| {
+                let mut f = RgbImage::new(src.width(), src.height());
+                src.render(k, &mut f);
+                f
+            })
+            .collect()
     }
 
     const RED: Rgb<u8> = Rgb([255, 0, 0]);
@@ -190,9 +258,8 @@ mod tests {
     #[test]
     fn frames_are_centred_on_both_axes() {
         let c = conf(Style::Frames, 10, 10, 1.0, None);
-        let img = RgbImage::from_pixel(4, 2, RED);
-        let mut out = Vec::new();
-        render_frames(&[img], &c, &mut out).unwrap();
+        let imgs = [RgbImage::from_pixel(4, 2, RED)];
+        let out = all_frames(&Slideshow::new(&imgs, &c));
         assert_eq!(out.len(), 1);
         let f = &out[0];
         assert_eq!(*f.get_pixel(3, 4), RED); // top-left of the centred image
@@ -206,27 +273,25 @@ mod tests {
         let imgs = vec![RgbImage::new(2, 2), RgbImage::new(2, 2)];
         let mut c = conf(Style::Frames, 2, 2, 30.0, None);
         c.spp = 2.0;
-        let mut out = Vec::new();
-        render_frames(&imgs, &c, &mut out).unwrap();
-        assert_eq!(out.len(), 120);
+        let s = Slideshow::new(&imgs, &c);
+        assert_eq!(s.len(), 120);
+        // Frame 0 and 60 start a new image; the rest repeat the previous frame.
+        assert!(!s.same_as_previous(0) && !s.same_as_previous(60));
+        assert!(s.same_as_previous(1) && s.same_as_previous(119));
 
         let c = conf(Style::Frames, 2, 2, 30.0, Some(1.0));
-        let mut out = Vec::new();
-        render_frames(&imgs, &c, &mut out).unwrap();
-        assert_eq!(out.len(), 30);
+        assert_eq!(Slideshow::new(&imgs, &c).len(), 30);
     }
 
     /// Two 4px images (red then blue) in a 4x4 viewport.
     fn scroll(style: Style) -> Vec<RgbImage> {
-        let (a, b) = (
+        let imgs = [
             RgbImage::from_pixel(4, 4, RED),
             RgbImage::from_pixel(4, 4, BLUE),
-        );
+        ];
         // travel = 4 (blank) + 8 (content) = 12; 13 frames => exactly 1px per frame.
         let c = conf(style, 4, 4, 13.0, Some(1.0));
-        let mut out = Vec::new();
-        render_scroll(&[a, b], &c, &mut out).unwrap();
-        out
+        all_frames(&Scroll::new(&imgs, &c))
     }
 
     #[test]
@@ -281,8 +346,19 @@ mod tests {
     fn scroll_duration_is_exact() {
         let imgs = vec![RgbImage::new(4, 100)];
         let c = conf(Style::Up, 4, 10, 30.0, Some(5.0));
-        let mut out = Vec::new();
-        render_scroll(&imgs, &c, &mut out).unwrap();
-        assert_eq!(out.len(), 150);
+        assert_eq!(Scroll::new(&imgs, &c).len(), 150);
+    }
+
+    #[test]
+    fn slow_scroll_reuses_frames() {
+        // 10px of travel over 100 frames: most frames repeat the previous offset.
+        let imgs = vec![RgbImage::new(4, 6)];
+        let c = conf(Style::Up, 4, 4, 100.0, Some(1.0));
+        let s = Scroll::new(&imgs, &c);
+        let repeats = (1..s.len()).filter(|&k| s.same_as_previous(k)).count();
+        assert!(
+            repeats > 80,
+            "expected most frames to repeat, got {repeats}"
+        );
     }
 }

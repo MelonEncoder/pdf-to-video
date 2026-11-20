@@ -3,15 +3,16 @@
 use anyhow::{Context, Result};
 use image::codecs::gif::GifDecoder;
 use image::imageops::{self, FilterType};
-use image::{AnimationDecoder, ImageReader, RgbImage, RgbaImage};
+use image::{AnimationDecoder, ImageDecoder, ImageReader, RgbImage, RgbaImage};
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use crate::cli::{Config, Input};
-use crate::pdf::add_pdf_images;
+use crate::pdf::{add_pdf_images, first_page_size, open_pdf, render_pages};
 use crate::scale::target_size;
-use crate::ui::{self, Progress};
+use crate::ui::{self, SharedProgress};
 
 /// Load every input in order, returning frames already scaled for the configured style.
 pub fn load_all(conf: &mut Config) -> Result<Vec<RgbImage>> {
@@ -80,40 +81,101 @@ fn has_ext(path: &Path, ext: &str) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case(ext))
 }
 
+/// What a file in an image sequence directory is, and how to load it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Pdf,
+    Gif,
+    /// A GIF without `--gif`: skipped with a note.
+    SkippedGif,
+    Image,
+}
+
+fn kind(path: &Path, conf: &Config) -> Kind {
+    if has_ext(path, "pdf") {
+        Kind::Pdf
+    } else if has_ext(path, "gif") {
+        if conf.render_gifs {
+            Kind::Gif
+        } else {
+            Kind::SkippedGif
+        }
+    } else {
+        Kind::Image
+    }
+}
+
+/// Native size of a file, reading only headers where possible.
+fn native_size(path: &Path, conf: &Config) -> Option<(u32, u32)> {
+    match kind(path, conf) {
+        Kind::Pdf => open_pdf(path)
+            .ok()
+            .and_then(|pdf| first_page_size(&pdf, conf.reverse)),
+        Kind::Gif => {
+            let file = BufReader::new(File::open(path).ok()?);
+            GifDecoder::new(file).ok().map(|d| d.dimensions())
+        }
+        Kind::Image => ImageReader::open(path)
+            .ok()?
+            .with_guessed_format()
+            .ok()?
+            .into_dimensions()
+            .ok(),
+        Kind::SkippedGif => None,
+    }
+}
+
+/// Load one file of a sequence as zero or more frames. Unreadable files are skipped with
+/// a warning rather than aborting the whole video.
+fn load_file(path: &Path, conf: &Config) -> Vec<RgbImage> {
+    let loaded = match kind(path, conf) {
+        Kind::Pdf => open_pdf(path).map(|pdf| render_pages(&pdf, path, conf, None)),
+        Kind::Gif => gif_frames(path, conf),
+        Kind::Image => load_image(path).map(|img| vec![conform(img, conf)]),
+        Kind::SkippedGif => {
+            ui::note(format!(
+                "'{}' skipped. Use --gif to render gif files as support is limited.",
+                path.display()
+            ));
+            Ok(Vec::new())
+        }
+    };
+    loaded.unwrap_or_else(|e| {
+        ui::warn(format!(
+            "'{}' could not be read ({e:#}). Skipped.",
+            path.display()
+        ));
+        Vec::new()
+    })
+}
+
+/// Load a numbered image sequence, decoding and scaling files in parallel.
 fn add_dir_images(dir: &Path, out: &mut Vec<RgbImage>, conf: &mut Config) -> Result<()> {
     let paths = dir_image_paths(dir, conf.reverse)?;
     if paths.is_empty() {
         ui::warn(format!("'{}' contains no numbered images.", dir.display()));
         return Ok(());
     }
-    let mut progress = Progress::new(format!("Loading {}", dir.display()), paths.len());
-
-    for (i, path) in paths.iter().enumerate() {
-        if has_ext(path, "pdf") {
-            add_pdf_images(path, out, conf)?;
-        } else if has_ext(path, "gif") {
-            if conf.render_gifs {
-                add_gif_images(path, out, conf)?;
-            } else {
-                ui::note(format!(
-                    "'{}' skipped. Use --gif to render gif files as support is limited.",
-                    path.display()
-                ));
-            }
-        } else {
-            match load_image(path) {
-                Ok(img) => {
-                    conf.resolve_resolution(img.width(), img.height(), path);
-                    out.push(conform(img, conf));
-                }
-                Err(e) => ui::warn(format!(
-                    "'{}' could not be read ({e:#}). Skipped.",
-                    path.display()
-                )),
-            }
-        }
-        progress.set(i + 1);
+    // Every file is scaled to the output resolution, so settle it (from the first readable
+    // file) before loading anything in parallel.
+    if (conf.width == 0 || conf.height == 0)
+        && let Some(((w, h), path)) = paths
+            .iter()
+            .find_map(|p| native_size(p, conf).map(|size| (size, p)))
+    {
+        conf.resolve_resolution(w, h, path);
     }
+    let conf: &Config = conf;
+    let progress = SharedProgress::new(format!("Loading {}", dir.display()), paths.len());
+    let per_file: Vec<Vec<RgbImage>> = paths
+        .par_iter()
+        .map(|path| {
+            let frames = load_file(path, conf);
+            progress.tick();
+            frames
+        })
+        .collect();
+    out.extend(per_file.into_iter().flatten());
     Ok(())
 }
 
@@ -137,19 +199,17 @@ fn flatten_on_black(rgba: &RgbaImage) -> RgbImage {
     })
 }
 
-/// Add each frame of a GIF as one video frame.
-fn add_gif_images(path: &Path, out: &mut Vec<RgbImage>, conf: &mut Config) -> Result<()> {
-    let file =
-        BufReader::new(File::open(path).with_context(|| format!("opening '{}'", path.display()))?);
-    let decoder = GifDecoder::new(file)
-        .with_context(|| format!("could not open GIF '{}'", path.display()))?;
-    for frame in decoder.into_frames() {
-        let frame = frame.with_context(|| format!("decoding GIF '{}'", path.display()))?;
-        let img = flatten_on_black(frame.buffer());
-        conf.resolve_resolution(img.width(), img.height(), path);
-        out.push(conform(img, conf));
-    }
-    Ok(())
+/// Each frame of a GIF as one video frame.
+fn gif_frames(path: &Path, conf: &Config) -> Result<Vec<RgbImage>> {
+    let file = BufReader::new(File::open(path)?);
+    let decoder = GifDecoder::new(file).context("could not open GIF")?;
+    decoder
+        .into_frames()
+        .map(|frame| {
+            let frame = frame.context("decoding GIF frame")?;
+            Ok(conform(flatten_on_black(frame.buffer()), conf))
+        })
+        .collect()
 }
 
 #[cfg(test)]

@@ -1,4 +1,7 @@
-//! PDF page rendering via hayro (pure Rust), parallelised across pages.
+//! PDF page rendering via hayro (pure Rust).
+//!
+//! Pages are rendered on demand, at exactly their final size, by whichever encoder thread
+//! needs them.
 
 use anyhow::{Context, Result, anyhow};
 use hayro::hayro_interpret::InterpreterSettings;
@@ -6,26 +9,28 @@ use hayro::hayro_syntax::Pdf;
 use hayro::vello_cpu::color::palette::css::WHITE;
 use hayro::{PixmapSettings, RenderCache, RenderSettings, render};
 use image::RgbImage;
-use rayon::prelude::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::cli::Config;
-use crate::input::conform;
-use crate::scale::style_scale;
-use crate::ui::{self, SharedProgress};
+use crate::input::resize_exact;
 
 /// Largest pixmap side hayro can render (its buffers are sized with u16).
-const MAX_SIDE: f64 = u16::MAX as f64;
+const MAX_SIDE: u32 = u16::MAX as u32;
 
-pub fn open_pdf(path: &Path) -> Result<Pdf> {
+/// Open a PDF for the rest of the program's run. Documents are leaked deliberately: pages
+/// are rendered lazily from many threads until the video is finished, and a `'static`
+/// document lets each thread keep a font/glyph cache for it (see [`CACHES`]).
+pub fn open_pdf(path: &Path) -> Result<&'static Pdf> {
     let data = std::fs::read(path).with_context(|| format!("reading '{}'", path.display()))?;
-    Pdf::new(Arc::new(data))
-        .map_err(|e| anyhow!("'{}' could not be opened as a PDF: {e:?}", path.display()))
+    let pdf = Pdf::new(Arc::new(data))
+        .map_err(|e| anyhow!("'{}' could not be opened as a PDF: {e:?}", path.display()))?;
+    Ok(Box::leak(Box::new(pdf)))
 }
 
 /// Page indices in playback order (last-to-first with `--rev`).
-fn page_order(n: usize, reverse: bool) -> Vec<usize> {
+pub fn page_order(n: usize, reverse: bool) -> Vec<usize> {
     if reverse {
         (0..n).rev().collect()
     } else {
@@ -34,51 +39,42 @@ fn page_order(n: usize, reverse: bool) -> Vec<usize> {
 }
 
 /// Size in points (1pt = 1px at 72 DPI) of a page, after rotation and cropping.
-fn page_size(pdf: &Pdf, idx: usize) -> Option<(f32, f32)> {
+pub fn page_size(pdf: &Pdf, idx: usize) -> Option<(f32, f32)> {
     let (w, h) = pdf.pages()[idx].render_dimensions();
     (w > 0.0 && h > 0.0).then_some((w, h))
 }
 
-/// Native size of the first page (in playback order) that has one.
-pub fn first_page_size(pdf: &Pdf, reverse: bool) -> Option<(u32, u32)> {
-    page_order(pdf.pages().len(), reverse)
-        .into_iter()
-        .find_map(|i| page_size(pdf, i))
-        .map(|(w, h)| (w.round() as u32, h.round() as u32))
+thread_local! {
+    /// One render cache per document per thread. The cache isn't thread-safe, but reusing
+    /// it across pages avoids re-parsing fonts for every page.
+    static CACHES: RefCell<HashMap<usize, RenderCache<'static>>> = RefCell::new(HashMap::new());
 }
 
-/// Render one page scaled for the configured style. `None` (with a warning) if it can't be.
-fn render_page<'a>(
-    pdf: &'a Pdf,
-    idx: usize,
-    cache: &RenderCache<'a>,
-    conf: &Config,
-    path: &Path,
-) -> Option<RgbImage> {
-    let Some((pw, ph)) = page_size(pdf, idx) else {
-        ui::warn(format!(
-            "Page {} of '{}' has no size. Skipped.",
-            idx + 1,
-            path.display()
-        ));
-        return None;
+/// Render a page to exactly `width`x`height` pixels.
+pub fn render_page(pdf: &'static Pdf, idx: usize, width: u32, height: u32) -> RgbImage {
+    let page = &pdf.pages()[idx];
+    let (pw, ph) = page.render_dimensions();
+    // hayro sizes the pixmap as `(points * scale) as u16` (truncating), so aim half a pixel
+    // past the target to land on it exactly; no second resample needed.
+    let (rw, rh) = (width.min(MAX_SIDE), height.min(MAX_SIDE));
+    let settings = PixmapSettings {
+        x_scale: ((rw as f64 + 0.5) / pw as f64) as f32,
+        y_scale: ((rh as f64 + 0.5) / ph as f64) as f32,
+        bg_color: WHITE,
     };
-    let mut scale = style_scale(conf.style, pw as f64, ph as f64, conf.width, conf.height);
-    // Very long pages in scroll mode could exceed the renderer's limit; render as large as
-    // allowed and let `conform` stretch the rest of the way.
-    scale = scale.min(MAX_SIDE / pw as f64).min(MAX_SIDE / ph as f64);
-
-    let pixmap = render(
-        &pdf.pages()[idx],
-        cache,
-        &InterpreterSettings::default(),
-        &RenderSettings::default(),
-        &PixmapSettings {
-            x_scale: scale as f32,
-            y_scale: scale as f32,
-            bg_color: WHITE,
-        },
-    );
+    let pixmap = CACHES.with(|caches| {
+        let mut caches = caches.borrow_mut();
+        let cache = caches
+            .entry(pdf as *const Pdf as usize)
+            .or_insert_with(RenderCache::new);
+        render(
+            page,
+            cache,
+            &InterpreterSettings::default(),
+            &RenderSettings::default(),
+            &settings,
+        )
+    });
     let (w, h) = (pixmap.width() as u32, pixmap.height() as u32);
     // Opaque white background, so premultiplied RGBA == straight RGBA; just drop alpha.
     let rgb: Vec<u8> = pixmap
@@ -88,68 +84,7 @@ fn render_page<'a>(
         .iter()
         .flat_map(|&[r, g, b, _]| [r, g, b])
         .collect();
-    match RgbImage::from_raw(w, h, rgb).filter(|_| w > 0 && h > 0) {
-        Some(img) => Some(conform(img, conf)),
-        None => {
-            ui::warn(format!(
-                "Page {} of '{}' rendered empty. Skipped.",
-                idx + 1,
-                path.display()
-            ));
-            None
-        }
-    }
-}
-
-/// Render all pages in playback order, in parallel. The output resolution must already be
-/// resolved (see [`first_page_size`]).
-pub fn render_pages(
-    pdf: &Pdf,
-    path: &Path,
-    conf: &Config,
-    progress: Option<&SharedProgress>,
-) -> Vec<RgbImage> {
-    let order = page_order(pdf.pages().len(), conf.reverse);
-    // Contiguous runs of pages per task, so each task can reuse one render cache (fonts,
-    // glyphs) — the cache isn't thread-safe. A few runs per thread balances uneven pages.
-    let run = order
-        .len()
-        .div_ceil(rayon::current_num_threads() * 4)
-        .max(1);
-    order
-        .par_chunks(run)
-        .flat_map_iter(|idxs| {
-            let cache = RenderCache::new();
-            idxs.iter()
-                .filter_map(|&idx| {
-                    let img = render_page(pdf, idx, &cache, conf, path);
-                    if let Some(p) = progress {
-                        p.tick();
-                    }
-                    img
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
-}
-
-/// A PDF given directly on the command line: sets the resolution if it's still auto and
-/// shows its own progress bar.
-pub fn add_pdf_images(path: &Path, out: &mut Vec<RgbImage>, conf: &mut Config) -> Result<()> {
-    let pdf = open_pdf(path)?;
-    let n = pdf.pages().len();
-    if n == 0 {
-        ui::warn(format!("'{}' has no pages. Skipped.", path.display()));
-        return Ok(());
-    }
-    if let Some((w, h)) = first_page_size(&pdf, conf.reverse) {
-        conf.resolve_resolution(w, h, path);
-    }
-    let name = path.file_name().map_or_else(
-        || path.display().to_string(),
-        |n| n.to_string_lossy().into_owned(),
-    );
-    let progress = SharedProgress::new(format!("Loading {name}"), n);
-    out.extend(render_pages(&pdf, path, conf, Some(&progress)));
-    Ok(())
+    let img = RgbImage::from_raw(w, h, rgb).unwrap_or_else(|| RgbImage::new(width, height));
+    // Only differs for pages longer than the renderer's limit (or float edge cases).
+    resize_exact(img, width, height)
 }

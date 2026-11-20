@@ -6,7 +6,7 @@ mod render;
 mod scale;
 mod ui;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use std::time::Instant;
 
 fn run() -> Result<()> {
@@ -19,12 +19,9 @@ fn run() -> Result<()> {
         .num_threads(conf.threads)
         .build_global()?;
 
-    let images = input::load_all(&mut conf)?;
-    if images.is_empty() {
-        bail!("No pages or images were loaded, nothing to render.");
-    }
-
-    let source = render::frame_source(&images, &conf);
+    // Lists pages/images and their sizes; pixels are rendered on demand while encoding.
+    let library = input::scan(&mut conf)?;
+    let source = render::frame_source(&library, &conf);
     encode::encode_video(source.as_ref(), &conf.output, conf.fps, conf.threads)?;
 
     ui::print_duration(start);

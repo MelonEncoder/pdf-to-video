@@ -17,14 +17,15 @@ pub fn style_scale(style: Style, w: f64, h: f64, vw: u32, vh: u32) -> f64 {
     }
 }
 
-/// Exact pixel size an image of `w`x`h` should end up at for the given style.
+/// Exact pixel size a `w`x`h` source (pixels, or PDF points) should end up at for the
+/// given style.
 ///
 /// Scroll styles pin the cross axis to the viewport exactly; frames mode never
 /// exceeds the viewport.
-pub fn target_size(style: Style, w: u32, h: u32, vw: u32, vh: u32) -> (u32, u32) {
-    let s = style_scale(style, w as f64, h as f64, vw, vh);
-    let sw = ((w as f64 * s).round() as u32).max(1);
-    let sh = ((h as f64 * s).round() as u32).max(1);
+pub fn target_size(style: Style, w: f64, h: f64, vw: u32, vh: u32) -> (u32, u32) {
+    let s = style_scale(style, w, h, vw, vh);
+    let sw = ((w * s).round() as u32).max(1);
+    let sh = ((h * s).round() as u32).max(1);
     match style {
         Style::Frames => (sw.min(vw), sh.min(vh)),
         Style::Up | Style::Down => (vw, sh),
@@ -73,31 +74,52 @@ mod tests {
     fn fit_downscales_by_tighter_axis() {
         // 2000x1000 into 1280x720: width is the limiting axis.
         assert_eq!(
-            target_size(Style::Frames, 2000, 1000, 1280, 720),
+            target_size(Style::Frames, 2000.0, 1000.0, 1280, 720),
             (1280, 640)
         );
         // Tall page: height limits.
-        assert_eq!(target_size(Style::Frames, 612, 792, 1280, 720), (556, 720));
+        assert_eq!(
+            target_size(Style::Frames, 612.0, 792.0, 1280, 720),
+            (556, 720)
+        );
     }
 
     #[test]
     fn fit_upscales_small_images() {
-        assert_eq!(target_size(Style::Frames, 320, 180, 1280, 720), (1280, 720));
-        assert_eq!(target_size(Style::Frames, 100, 50, 1280, 720), (1280, 640));
+        assert_eq!(
+            target_size(Style::Frames, 320.0, 180.0, 1280, 720),
+            (1280, 720)
+        );
+        assert_eq!(
+            target_size(Style::Frames, 100.0, 50.0, 1280, 720),
+            (1280, 640)
+        );
     }
 
     #[test]
     fn fit_wide_but_short_image() {
         // Wider than viewport but shorter: the C++ version mis-compared width to height here.
-        assert_eq!(target_size(Style::Frames, 1500, 100, 1280, 720), (1280, 85));
+        assert_eq!(
+            target_size(Style::Frames, 1500.0, 100.0, 1280, 720),
+            (1280, 85)
+        );
     }
 
     #[test]
     fn scroll_pins_cross_axis() {
-        assert_eq!(target_size(Style::Up, 612, 792, 1280, 720), (1280, 1656));
-        assert_eq!(target_size(Style::Down, 333, 111, 1280, 720), (1280, 427));
-        assert_eq!(target_size(Style::Left, 612, 792, 1280, 720), (556, 720));
-        assert_eq!(target_size(Style::Right, 10, 10, 1281, 721), (721, 721));
+        assert_eq!(
+            target_size(Style::Up, 612.0, 792.0, 1280, 720),
+            (1280, 1656)
+        );
+        assert_eq!(
+            target_size(Style::Down, 333.0, 111.0, 1280, 720),
+            (1280, 427)
+        );
+        assert_eq!(
+            target_size(Style::Left, 612.0, 792.0, 1280, 720),
+            (556, 720)
+        );
+        assert_eq!(target_size(Style::Right, 10.0, 10.0, 1281, 721), (721, 721));
     }
 
     #[test]
@@ -114,6 +136,15 @@ mod tests {
         // Result is always even and within limits.
         let (w, h) = clamp_to_encoder_max(5001, 3333).unwrap();
         assert!(w % 2 == 0 && h % 2 == 0 && w <= 3840 && h <= 2160);
+    }
+
+    #[test]
+    fn fractional_page_sizes() {
+        // A4 in points: rounding the page size first would give 1528 here instead of 1527.
+        assert_eq!(
+            target_size(Style::Frames, 841.89, 595.28, 1920, 1080),
+            (1527, 1080)
+        );
     }
 
     #[test]

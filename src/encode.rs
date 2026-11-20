@@ -20,6 +20,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::BufWriter;
 use std::ops::Range;
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::{Condvar, Mutex, mpsc};
 
@@ -40,6 +41,13 @@ pub trait FrameSource: Sync {
     fn same_as_previous(&self, _k: usize) -> bool {
         false
     }
+    /// Pages/images that frame `k` draws from (appended to `out`), so their pixels can be
+    /// freed once every chunk using them is done.
+    fn items(&self, _k: usize, _out: &mut Vec<usize>) {}
+    /// One more chunk will use `item`.
+    fn retain(&self, _item: usize) {}
+    /// A chunk using `item` is finished.
+    fn release(&self, _item: usize) {}
 }
 
 /// Track timescale (ticks per second). 90 kHz is the MPEG convention and represents
@@ -165,7 +173,8 @@ fn encode_chunk(src: &dyn FrameSource, range: Range<usize>, fps: f64) -> Result<
         // The first frame of a chunk is always drawn: this worker has no previous frame.
         if k == range.start || !src.same_as_previous(k) {
             src.render(k, &mut frame);
-            yuv.read_rgb(RgbSliceU8::new(frame.as_raw(), (w as usize, h as usize)));
+            // `read_rgb8` is ~20x faster than `read_rgb`, with identical output.
+            yuv.read_rgb8(RgbSliceU8::new(frame.as_raw(), (w as usize, h as usize)));
         }
         let bs = encoder
             .encode(&yuv)
@@ -177,7 +186,9 @@ fn encode_chunk(src: &dyn FrameSource, range: Range<usize>, fps: f64) -> Result<
         let skipped = frame_type == FrameType::Skip || avcc.data.is_empty();
         frames.push(EncodedFrame {
             data: if skipped { Vec::new() } else { avcc.data },
-            is_sync: matches!(frame_type, FrameType::IDR | FrameType::I),
+            // Only IDR frames are safe seek points (a plain I-frame may be followed by frames
+            // that reference earlier ones).
+            is_sync: frame_type == FrameType::IDR,
         });
     }
     Ok(Chunk {
@@ -187,9 +198,13 @@ fn encode_chunk(src: &dyn FrameSource, range: Range<usize>, fps: f64) -> Result<
     })
 }
 
-/// Writes encoded frames to the MP4 file, in order.
+/// Writes encoded frames to the MP4, in order. The video is written to a temporary file
+/// next to the destination and renamed into place only when complete, so a failed run
+/// neither leaves a broken file nor destroys an existing one.
 struct Mp4Output {
     path: PathBuf,
+    tmp_path: PathBuf,
+    done: bool,
     width: u32,
     height: u32,
     writer: Option<Mp4Writer<BufWriter<File>>>,
@@ -202,8 +217,13 @@ struct Mp4Output {
 
 impl Mp4Output {
     fn new(path: &Path, width: u32, height: u32, fps: f64) -> Self {
+        let name = path
+            .file_name()
+            .map_or_else(|| "video.mp4".into(), |n| n.to_string_lossy().into_owned());
         Self {
             path: path.to_path_buf(),
+            tmp_path: path.with_file_name(format!(".{name}.ptv-partial")),
+            done: false,
             width,
             height,
             writer: None,
@@ -271,12 +291,20 @@ impl Mp4Output {
             .take()
             .context("no frames were rendered, nothing to write")?;
         writer.write_end().context("finalising MP4")?;
+        writer
+            .into_writer()
+            .into_inner()
+            .map_err(|e| e.into_error())
+            .context("writing MP4")?;
+        std::fs::rename(&self.tmp_path, &self.path)
+            .with_context(|| format!("saving '{}'", self.path.display()))?;
+        self.done = true;
         Ok(())
     }
 
     fn open_writer(&mut self, sps: Vec<u8>, pps: Vec<u8>) -> Result<()> {
-        let file = File::create(&self.path)
-            .with_context(|| format!("creating '{}'", self.path.display()))?;
+        let file = File::create(&self.tmp_path)
+            .with_context(|| format!("creating '{}'", self.tmp_path.display()))?;
         let brand = |s: &str| s.parse().expect("valid fourcc");
         let mut writer = Mp4Writer::write_start(
             BufWriter::new(file),
@@ -301,6 +329,26 @@ impl Mp4Output {
         self.writer = Some(writer);
         Ok(())
     }
+}
+
+impl Drop for Mp4Output {
+    fn drop(&mut self) {
+        if !self.done && self.writer.is_some() {
+            drop(self.writer.take()); // close the file first (required on Windows)
+            let _ = std::fs::remove_file(&self.tmp_path);
+        }
+    }
+}
+
+/// Turn a worker panic into an ordinary error, so the writer reports it instead of
+/// waiting forever for a chunk that will never arrive.
+fn panic_to_error(payload: Box<dyn std::any::Any + Send>) -> anyhow::Error {
+    let msg = payload
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".into());
+    anyhow!("internal error while encoding: {msg}")
 }
 
 /// Hands out chunk indices in order, keeping workers at most `window` chunks ahead of
@@ -377,17 +425,41 @@ pub fn encode_video(src: &dyn FrameSource, path: &Path, fps: f64, threads: usize
         window: workers * 2,
         total: n_chunks,
     };
+    // Which pages/images each chunk draws from. Registering every use up front lets the
+    // library free a page's pixels as soon as the last chunk needing it is encoded.
+    let chunk_items: Vec<Vec<usize>> = (0..n_chunks)
+        .map(|i| {
+            let mut items = Vec::new();
+            for k in i * chunk..((i + 1) * chunk).min(total) {
+                src.items(k, &mut items);
+            }
+            items.sort_unstable();
+            items.dedup();
+            for &item in &items {
+                src.retain(item);
+            }
+            items
+        })
+        .collect();
+
     let mut out = Mp4Output::new(path, w, h, fps);
     let mut progress = Progress::new(src.label(), total);
 
     let result = std::thread::scope(|scope| -> Result<()> {
         let (tx, rx) = mpsc::channel::<(usize, Result<Chunk>)>();
         for _ in 0..workers {
-            let (tx, sched) = (tx.clone(), &sched);
+            let (tx, sched, chunk_items) = (tx.clone(), &sched, &chunk_items);
             scope.spawn(move || {
                 while let Some(i) = sched.take() {
                     let range = i * chunk..((i + 1) * chunk).min(total);
-                    if tx.send((i, encode_chunk(src, range, fps))).is_err() {
+                    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                        encode_chunk(src, range, fps)
+                    }))
+                    .unwrap_or_else(|p| Err(panic_to_error(p)));
+                    for &item in &chunk_items[i] {
+                        src.release(item);
+                    }
+                    if tx.send((i, result)).is_err() {
                         return; // writer gave up
                     }
                 }
@@ -501,6 +573,48 @@ mod tests {
             assert!(syncs[start], "frame {start} should be a keyframe");
         }
         std::fs::remove_file(&path).unwrap();
+    }
+
+    /// Panics while drawing frame `bad`.
+    struct Faulty {
+        bad: usize,
+    }
+
+    impl FrameSource for Faulty {
+        fn len(&self) -> usize {
+            100
+        }
+        fn width(&self) -> u32 {
+            64
+        }
+        fn height(&self) -> u32 {
+            48
+        }
+        fn label(&self) -> String {
+            "test".into()
+        }
+        fn render(&self, k: usize, frame: &mut RgbImage) {
+            assert!(k != self.bad, "boom at frame {k}");
+            frame.fill(0);
+        }
+    }
+
+    #[test]
+    fn worker_panic_is_an_error_and_keeps_existing_output() {
+        let dir = std::env::temp_dir().join(format!("ptv-enc-fail-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("out.mp4");
+        std::fs::write(&path, b"previous video").unwrap();
+
+        // Must return (not hang) with the panic message.
+        let err = encode_video(&Faulty { bad: 60 }, &path, 10.0, 4).unwrap_err();
+        assert!(format!("{err:#}").contains("boom at frame 60"), "{err:#}");
+
+        // The old file is untouched and no partial file is left behind.
+        assert_eq!(std::fs::read(&path).unwrap(), b"previous video");
+        let leftovers: Vec<_> = std::fs::read_dir(&dir).unwrap().collect();
+        assert_eq!(leftovers.len(), 1, "partial file left behind");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

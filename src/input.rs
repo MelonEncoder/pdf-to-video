@@ -1,45 +1,205 @@
-//! Loading inputs (image sequence directories, images, GIFs) into RGB frames.
+//! Finding and loading inputs (PDF pages, images, GIF frames).
+//!
+//! Inputs are first *scanned*: every page/image is listed with its final size, reading only
+//! file headers. Pixels are produced later, on demand, by the [`Library`], and dropped as
+//! soon as no remaining part of the video needs them, so memory stays roughly constant no
+//! matter how many pages there are.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use image::codecs::gif::GifDecoder;
 use image::imageops::{self, FilterType};
-use image::{AnimationDecoder, ImageDecoder, ImageReader, RgbImage, RgbaImage};
+use image::{AnimationDecoder, ImageReader, RgbImage, RgbaImage};
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::cli::{Config, Input};
-use crate::pdf::{add_pdf_images, first_page_size, open_pdf, render_pages};
+use crate::pdf::{open_pdf, page_order, page_size, render_page};
 use crate::scale::target_size;
-use crate::ui::{self, SharedProgress};
+use crate::ui;
+use hayro::hayro_syntax::Pdf;
 
-/// Load every input in order, returning frames already scaled for the configured style.
-pub fn load_all(conf: &mut Config) -> Result<Vec<RgbImage>> {
-    let mut images = Vec::new();
-    for input in conf.inputs.clone() {
-        match input {
-            Input::Pdf(p) => add_pdf_images(&p, &mut images, conf)?,
-            Input::Dir(p) => add_dir_images(&p, &mut images, conf)?,
-        }
-    }
-    Ok(images)
-}
-
-/// Resize an image to its exact target size for the configured style and resolution.
-pub fn conform(img: RgbImage, conf: &Config) -> RgbImage {
-    let (tw, th) = target_size(
-        conf.style,
-        img.width(),
-        img.height(),
-        conf.width,
-        conf.height,
-    );
-    if (tw, th) == img.dimensions() {
+/// Resize to exactly `width`x`height` (no-op if already that size).
+pub fn resize_exact(img: RgbImage, width: u32, height: u32) -> RgbImage {
+    if img.dimensions() == (width, height) {
         img
     } else {
-        imageops::resize(&img, tw, th, FilterType::Triangle)
+        imageops::resize(&img, width, height, FilterType::Triangle)
     }
+}
+
+/// Where an item's pixels come from.
+enum Source {
+    Pdf {
+        pdf: &'static Pdf,
+        page: usize,
+    },
+    File(PathBuf),
+    /// Already decoded (GIF frames), at native size.
+    Memory(RgbImage),
+}
+
+/// One page or image of the video.
+struct Item {
+    source: Source,
+    /// Final (scaled) size.
+    width: u32,
+    height: u32,
+    /// The scaled pixels, while some part of the video still needs them.
+    pixels: Mutex<Option<Arc<RgbImage>>>,
+    /// How many encoder chunks still need this item; pixels are dropped at zero.
+    needed_by: AtomicUsize,
+}
+
+/// All pages/images of the video in playback order, rendered on demand.
+pub struct Library {
+    items: Vec<Item>,
+}
+
+impl Library {
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// Final size of item `i`.
+    pub fn size(&self, i: usize) -> (u32, u32) {
+        (self.items[i].width, self.items[i].height)
+    }
+
+    /// The scaled pixels of item `i`, rendering/decoding them if needed. Threads asking for
+    /// the same item wait for one render instead of duplicating it.
+    pub fn get(&self, i: usize) -> Arc<RgbImage> {
+        let item = &self.items[i];
+        let mut pixels = item.pixels.lock().unwrap();
+        if let Some(img) = pixels.as_ref() {
+            return img.clone();
+        }
+        let (w, h) = (item.width, item.height);
+        let img = Arc::new(match &item.source {
+            Source::Pdf { pdf, page } => render_page(pdf, *page, w, h),
+            Source::Memory(img) => resize_exact(img.clone(), w, h),
+            Source::File(path) => match load_image(path) {
+                Ok(img) => resize_exact(img, w, h),
+                Err(e) => {
+                    // The header read fine during scanning, so this is rare (a truncated
+                    // or changed file). Show black rather than abort a long render.
+                    ui::warn(format!(
+                        "'{}' could not be decoded ({e:#}); showing black.",
+                        path.display()
+                    ));
+                    RgbImage::new(w, h)
+                }
+            },
+        });
+        *pixels = Some(img.clone());
+        img
+    }
+
+    /// Record that one more encoder chunk will use item `i`.
+    pub fn retain(&self, i: usize) {
+        self.items[i].needed_by.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// A chunk that used item `i` is done; free the pixels once nothing else needs them.
+    pub fn release(&self, i: usize) {
+        let item = &self.items[i];
+        if item.needed_by.fetch_sub(1, Ordering::AcqRel) == 1 {
+            *item.pixels.lock().unwrap() = None;
+        }
+    }
+
+    /// A library of ready-made images (already at final size), for tests.
+    #[cfg(test)]
+    pub fn from_images(images: Vec<RgbImage>) -> Self {
+        let items = images
+            .into_iter()
+            .map(|img| Item {
+                width: img.width(),
+                height: img.height(),
+                source: Source::Memory(img),
+                pixels: Mutex::new(None),
+                needed_by: AtomicUsize::new(0),
+            })
+            .collect();
+        Self { items }
+    }
+}
+
+/// An item found while scanning, before the output resolution is known.
+struct Found {
+    source: Source,
+    /// Native size: pixels, or points for PDF pages.
+    native: (f64, f64),
+    /// File it came from, for messages.
+    origin: Arc<Path>,
+}
+
+/// List every page/image of every input, in playback order, then size them for the output.
+pub fn scan(conf: &mut Config) -> Result<Library> {
+    let mut found = Vec::new();
+    for input in &conf.inputs {
+        match input {
+            Input::Pdf(path) => found.extend(scan_pdf(path, conf.reverse)?),
+            Input::Dir(dir) => found.extend(scan_dir(dir, conf)?),
+        }
+    }
+    let Some(first) = found.first() else {
+        bail!("No pages or images were found, nothing to render.");
+    };
+    let (w, h) = first.native;
+    conf.resolve_resolution(w.round() as u32, h.round() as u32, &first.origin);
+
+    let items: Vec<Item> = found
+        .into_iter()
+        .map(|f| {
+            let (width, height) =
+                target_size(conf.style, f.native.0, f.native.1, conf.width, conf.height);
+            Item {
+                source: f.source,
+                width,
+                height,
+                pixels: Mutex::new(None),
+                needed_by: AtomicUsize::new(0),
+            }
+        })
+        .collect();
+    ui::print_done(format!(
+        "Found {} page{}/image{}",
+        items.len(),
+        if items.len() == 1 { "" } else { "s" },
+        if items.len() == 1 { "" } else { "s" },
+    ));
+    Ok(Library { items })
+}
+
+fn scan_pdf(path: &Path, reverse: bool) -> Result<Vec<Found>> {
+    let pdf = open_pdf(path)?;
+    let origin: Arc<Path> = path.into();
+    let pages: Vec<Found> = page_order(pdf.pages().len(), reverse)
+        .into_iter()
+        .filter_map(|page| match page_size(pdf, page) {
+            Some((w, h)) => Some(Found {
+                source: Source::Pdf { pdf, page },
+                native: (w as f64, h as f64),
+                origin: origin.clone(),
+            }),
+            None => {
+                ui::warn(format!(
+                    "Page {} of '{}' has no size. Skipped.",
+                    page + 1,
+                    path.display()
+                ));
+                None
+            }
+        })
+        .collect();
+    if pages.is_empty() {
+        ui::warn(format!("'{}' has no pages. Skipped.", path.display()));
+    }
+    Ok(pages)
 }
 
 /// Numeric sort key: the leading digits of the file name (`012_title.png` -> 12).
@@ -81,102 +241,53 @@ fn has_ext(path: &Path, ext: &str) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case(ext))
 }
 
-/// What a file in an image sequence directory is, and how to load it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Kind {
-    Pdf,
-    Gif,
-    /// A GIF without `--gif`: skipped with a note.
-    SkippedGif,
-    Image,
-}
-
-fn kind(path: &Path, conf: &Config) -> Kind {
-    if has_ext(path, "pdf") {
-        Kind::Pdf
-    } else if has_ext(path, "gif") {
-        if conf.render_gifs {
-            Kind::Gif
-        } else {
-            Kind::SkippedGif
-        }
-    } else {
-        Kind::Image
-    }
-}
-
-/// Native size of a file, reading only headers where possible.
-fn native_size(path: &Path, conf: &Config) -> Option<(u32, u32)> {
-    match kind(path, conf) {
-        Kind::Pdf => open_pdf(path)
-            .ok()
-            .and_then(|pdf| first_page_size(&pdf, conf.reverse)),
-        Kind::Gif => {
-            let file = BufReader::new(File::open(path).ok()?);
-            GifDecoder::new(file).ok().map(|d| d.dimensions())
-        }
-        Kind::Image => ImageReader::open(path)
-            .ok()?
-            .with_guessed_format()
-            .ok()?
-            .into_dimensions()
-            .ok(),
-        Kind::SkippedGif => None,
-    }
-}
-
-/// Load one file of a sequence as zero or more frames. Unreadable files are skipped with
-/// a warning rather than aborting the whole video.
-fn load_file(path: &Path, conf: &Config) -> Vec<RgbImage> {
-    let loaded = match kind(path, conf) {
-        Kind::Pdf => open_pdf(path).map(|pdf| render_pages(&pdf, path, conf, None)),
-        Kind::Gif => gif_frames(path, conf),
-        Kind::Image => load_image(path).map(|img| vec![conform(img, conf)]),
-        Kind::SkippedGif => {
-            ui::note(format!(
-                "'{}' skipped. Use --gif to render gif files as support is limited.",
-                path.display()
-            ));
-            Ok(Vec::new())
-        }
-    };
-    loaded.unwrap_or_else(|e| {
-        ui::warn(format!(
-            "'{}' could not be read ({e:#}). Skipped.",
-            path.display()
-        ));
-        Vec::new()
-    })
-}
-
-/// Load a numbered image sequence, decoding and scaling files in parallel.
-fn add_dir_images(dir: &Path, out: &mut Vec<RgbImage>, conf: &mut Config) -> Result<()> {
+/// Scan a numbered image sequence. Files are probed in parallel; order is preserved.
+/// Unreadable files are skipped with a warning rather than aborting the whole video.
+fn scan_dir(dir: &Path, conf: &Config) -> Result<Vec<Found>> {
     let paths = dir_image_paths(dir, conf.reverse)?;
     if paths.is_empty() {
         ui::warn(format!("'{}' contains no numbered images.", dir.display()));
-        return Ok(());
     }
-    // Every file is scaled to the output resolution, so settle it (from the first readable
-    // file) before loading anything in parallel.
-    if (conf.width == 0 || conf.height == 0)
-        && let Some(((w, h), path)) = paths
-            .iter()
-            .find_map(|p| native_size(p, conf).map(|size| (size, p)))
-    {
-        conf.resolve_resolution(w, h, path);
-    }
-    let conf: &Config = conf;
-    let progress = SharedProgress::new(format!("Loading {}", dir.display()), paths.len());
-    let per_file: Vec<Vec<RgbImage>> = paths
+    let per_file: Vec<Vec<Found>> = paths
         .par_iter()
         .map(|path| {
-            let frames = load_file(path, conf);
-            progress.tick();
-            frames
+            let scanned = if has_ext(path, "pdf") {
+                scan_pdf(path, conf.reverse)
+            } else if has_ext(path, "gif") {
+                if conf.render_gifs {
+                    gif_frames(path)
+                } else {
+                    ui::note(format!(
+                        "'{}' skipped. Use --gif to render gif files as support is limited.",
+                        path.display()
+                    ));
+                    Ok(Vec::new())
+                }
+            } else {
+                image_header(path)
+            };
+            scanned.unwrap_or_else(|e| {
+                ui::warn(format!(
+                    "'{}' could not be read ({e:#}). Skipped.",
+                    path.display()
+                ));
+                Vec::new()
+            })
         })
         .collect();
-    out.extend(per_file.into_iter().flatten());
-    Ok(())
+    Ok(per_file.into_iter().flatten().collect())
+}
+
+/// An image file's size, from its header only.
+fn image_header(path: &Path) -> Result<Vec<Found>> {
+    let (w, h) = ImageReader::open(path)?
+        .with_guessed_format()?
+        .into_dimensions()?;
+    Ok(vec![Found {
+        source: Source::File(path.to_path_buf()),
+        native: (w as f64, h as f64),
+        origin: path.into(),
+    }])
 }
 
 fn load_image(path: &Path) -> Result<RgbImage> {
@@ -199,15 +310,21 @@ fn flatten_on_black(rgba: &RgbaImage) -> RgbImage {
     })
 }
 
-/// Each frame of a GIF as one video frame.
-fn gif_frames(path: &Path, conf: &Config) -> Result<Vec<RgbImage>> {
+/// Each frame of a GIF as one item. GIF frames depend on the previous frame, so they're
+/// decoded up front and kept in memory (GIF support is limited/small by design).
+fn gif_frames(path: &Path) -> Result<Vec<Found>> {
     let file = BufReader::new(File::open(path)?);
     let decoder = GifDecoder::new(file).context("could not open GIF")?;
+    let origin: Arc<Path> = path.into();
     decoder
         .into_frames()
         .map(|frame| {
-            let frame = frame.context("decoding GIF frame")?;
-            Ok(conform(flatten_on_black(frame.buffer()), conf))
+            let img = flatten_on_black(frame.context("decoding GIF frame")?.buffer());
+            Ok(Found {
+                native: (img.width() as f64, img.height() as f64),
+                source: Source::Memory(img),
+                origin: origin.clone(),
+            })
         })
         .collect()
 }
@@ -255,5 +372,22 @@ mod tests {
         let rgb = flatten_on_black(&rgba);
         assert_eq!(rgb.get_pixel(0, 0).0, [0, 0, 0]);
         assert_eq!(rgb.get_pixel(1, 0).0, [200, 100, 50]);
+    }
+
+    #[test]
+    fn pixels_are_freed_when_no_longer_needed() {
+        let lib = Library::from_images(vec![RgbImage::new(4, 4)]);
+        lib.retain(0);
+        lib.retain(0);
+        let img = lib.get(0);
+        assert!(lib.items[0].pixels.lock().unwrap().is_some());
+        lib.release(0);
+        assert!(
+            lib.items[0].pixels.lock().unwrap().is_some(),
+            "still needed once"
+        );
+        lib.release(0);
+        assert!(lib.items[0].pixels.lock().unwrap().is_none(), "freed");
+        drop(img);
     }
 }

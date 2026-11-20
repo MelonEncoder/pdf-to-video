@@ -44,6 +44,12 @@ cargo build --release
 ./target/release/ptv --help
 ```
 
+### Performance
+Pages are rendered and encoded in parallel on all CPU cores. Pages are rendered on
+demand and freed once used, so memory doesn't grow with page count; it grows with the
+number of threads and the resolution (roughly 65 MB per thread at 1080p, 250 MB at 4K).
+Use `-j <threads>` to limit CPU and memory use.
+
 Requires a Rust toolchain ([rustup](https://rustup.rs/)) and a C/C++ compiler (used to
 build the bundled OpenH264 encoder).
 

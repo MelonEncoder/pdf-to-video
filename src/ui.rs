@@ -1,7 +1,6 @@
 //! Terminal output: colours, banner, progress bar and timing.
 
 use std::io::{IsTerminal, Write};
-use std::sync::Mutex;
 use std::time::Instant;
 
 pub const RESET: &str = "\x1b[0m";
@@ -147,20 +146,9 @@ impl Progress {
     }
 }
 
-/// A [`Progress`] that several threads can advance, one item at a time.
-pub struct SharedProgress(Mutex<(Progress, usize)>);
-
-impl SharedProgress {
-    pub fn new(label: impl Into<String>, total: usize) -> Self {
-        Self(Mutex::new((Progress::new(label, total), 0)))
-    }
-
-    pub fn tick(&self) {
-        let mut guard = self.0.lock().unwrap();
-        let (progress, done) = &mut *guard;
-        *done += 1;
-        progress.set(*done);
-    }
+/// A completed-step line: `✓ message`.
+pub fn print_done(msg: impl std::fmt::Display) {
+    println!("{GREEN}\u{2713}\u{FE0E} {RESET}{msg}");
 }
 
 pub fn print_duration(start: Instant) {
